@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ミニゲーム ポイント計算</title>
+    <style>
+        /* 基本的なスタイル */
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px; /* 角丸 */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 400px; /* 最大幅 */
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+        }
+
+        .hammer-input {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee; /* 区切り線 */
+        }
+
+        .hammer-input:last-child {
+            border-bottom: none; /* 最後の要素に区切り線なし */
+        }
+
+        .hammer-input label {
+            margin-right: 15px;
+            font-size: 1.1em;
+            color: #555;
+            flex-grow: 1; /* ラベルが広がるように */
+            text-align: left;
+        }
+
+        .hammer-input input[type="number"] {
+            width: 70px; /* 入力欄の幅 */
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px; /* 角丸 */
+            text-align: right;
+            font-size: 1em;
+            box-sizing: border-box;
+            -moz-appearance: textfield; /* Firefoxでの矢印非表示 */
+        }
+
+        /* Chrome, Safari, Edge, Operaでの矢印非表示 */
+        .hammer-input input[type="number"]::-webkit-outer-spin-button,
+        .hammer-input input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+
+        button {
+            padding: 12px 25px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px; /* 角丸 */
+            cursor: pointer;
+            font-size: 1.1em;
+            margin-top: 25px;
+            transition: background-color 0.3s ease, transform 0.1s ease; /* ホバーとクリック時のアニメーション */
+            width: 100%; /* ボタンの幅 */
+            box-sizing: border-box;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:active {
+            transform: scale(0.98); /* クリック時に少し縮小 */
+        }
+
+        .result-area {
+            margin-top: 30px;
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #eee; /* 区切り線 */
+        }
+
+        #result {
+            color: #28a745; /* 結果のポイントの色 */
+            margin-left: 10px; /* ポイント表示の左余白 */
+        }
+
+        /* レスポンシブ対応 */
+        @media (max-width: 500px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+
+            .hammer-input {
+                flex-direction: column; /* 縦並び */
+                align-items: flex-start; /* 左寄せ */
+            }
+
+            .hammer-input label {
+                margin-bottom: 5px;
+                margin-right: 0;
+                text-align: left;
+            }
+
+            .hammer-input input[type="number"] {
+                width: 100%; /* 幅を100%に */
+                max-width: 100px; /* 最大幅を設定 */
+            }
+
+            button {
+                font-size: 1em;
+            }
+
+            .result-area {
+                font-size: 1.2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ミニゲーム ポイント計算</h1>
+
+        <div class="hammer-input">
+            <label for="woodHammer">木槌 (1Pt):</label>
+            <input type="number" id="woodHammer" min="0" value="0">
+        </div>
+
+        <div class="hammer-input">
+            <label for="ironHammer">鉄槌 (10Pt):</label>
+            <input type="number" id="ironHammer" min="0" value="0">
+        </div>
+
+        <div class="hammer-input">
+            <label for="copperHammer">銅槌 (20Pt):</label>
+            <input type="number" id="copperHammer" min="0" value="0">
+        </div>
+
+        <div class="hammer-input">
+            <label for="silverHammer">銀槌 (50Pt):</label>
+            <input type="number" id="silverHammer" min="0" value="0">
+        </div>
+
+        <div class="hammer-input">
+            <label for="goldHammer">金槌 (0Pt):</label>
+            <input type="number" id="goldHammer" min="0" value="0">
+        </div>
+
+        <button id="calculateButton">ポイントを計算</button>
+
+        <div class="result-area">
+            <p>合計ポイント: <span id="result">0</span> Pt</p>
+        </div>
+    </div>
+
+    <script>
+        // Get references to the input elements for each hammer type
+        const woodHammerInput = document.getElementById('woodHammer');
+        const ironHammerInput = document.getElementById('ironHammer');
+        const copperHammerInput = document.getElementById('copperHammer');
+        const silverHammerInput = document.getElementById('silverHammer');
+        const goldHammerInput = document.getElementById('goldHammer');
+
+        // Get references to the calculate button and the result display element
+        const calculateButton = document.getElementById('calculateButton');
+        const resultSpan = document.getElementById('result');
+
+        // Define the points awarded for each hammer type
+        const pointsPerHammer = {
+            wood: 1,
+            iron: 10,
+            copper: 20,
+            silver: 50,
+            gold: 0
+        };
+
+        // Function to calculate and display the total points
+        function calculateTotalPoints() {
+            // Get the quantity of each hammer, parse as integer, default to 0 if invalid
+            const woodQuantity = parseInt(woodHammerInput.value, 10) || 0;
+            const ironQuantity = parseInt(ironHammerInput.value, 10) || 0;
+            const copperQuantity = parseInt(copperHammerInput.value, 10) || 0;
+            const silverQuantity = parseInt(silverHammerInput.value, 10) || 0;
+            const goldQuantity = parseInt(goldHammerInput.value, 10) || 0;
+
+            // Calculate the total points
+            const totalPoints =
+                (woodQuantity * pointsPerHammer.wood) +
+                (ironQuantity * pointsPerHammer.iron) +
+                (copperQuantity * pointsPerHammer.copper) +
+                (silverQuantity * pointsPerHammer.silver) +
+                (goldQuantity * pointsPerHammer.gold);
+
+            // Update the result display element with the calculated total points
+            resultSpan.textContent = totalPoints;
+        }
+
+        // Add an event listener to the button to trigger the calculation on click
+        calculateButton.addEventListener('click', calculateTotalPoints);
+
+        /*
+        // Optional: Add event listeners to input fields for real-time calculation as values change
+        woodHammerInput.addEventListener('input', calculateTotalPoints);
+        ironHammerInput.addEventListener('input', calculateTotalPoints);
+        copperHammerInput.addEventListener('input', calculateTotalPoints);
+        silverHammerInput.addEventListener('input', calculateTotalPoints);
+        goldHammerInput.addEventListener('input', calculateTotalPoints);
+        */
+    </script>
+</body>
+</html>
