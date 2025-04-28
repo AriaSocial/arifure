@@ -15,47 +15,47 @@
 </head>
 <body class="flex items-center justify-center min-h-screen p-4">
     <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
-        <h1 class="text-2xl font-bold text-center mb-6 text-gray-800">槌ポイント計算 (ループあり)</h1>
+        <h1 class="text-2xl font-bold text-center mb-6 text-gray-800">槌ポイント計算</h1>
 
         <div class="space-y-4">
             <h2 class="text-xl font-semibold text-gray-700 mb-4">初期所持の槌</h2>
             <div class="flex items-center justify-between">
-                <label for="initialWoodenHammer" class="text-gray-700">木槌:</label>
+                <label for="initialWoodenHammer" class="text-gray-700">木槌：</label>
                 <input type="number" id="initialWoodenHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
             </div>
 
             <div class="flex items-center justify-between">
-                <label for="initialIronHammer" class="text-gray-700">鉄槌:</label>
+                <label for="initialIronHammer" class="text-gray-700">鉄槌：</label>
                 <input type="number" id="initialIronHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
             </div>
 
             <div class="flex items-center justify-between">
-                <label for="initialCopperHammer" class="text-gray-700">銅槌:</label>
+                <label for="initialCopperHammer" class="text-gray-700">銅槌：</label>
                 <input type="number" id="initialCopperHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
             </div>
 
             <div class="flex items-center justify-between">
-                <label for="initialSilverHammer" class="text-gray-700">銀槌:</label>
+                <label for="initialSilverHammer" class="text-gray-700">銀槌：</label>
                 <input type="number" id="initialSilverHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
             </div>
 
             <div class="flex items-center justify-between">
-                <label for="initialGoldHammer" class="text-gray-700">金槌:</label>
+                <label for="initialGoldHammer" class="text-gray-700">金槌：</label>
                 <input type="number" id="initialGoldHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
             </div>
         </div>
 
         <button id="calculateFinalBtn" class="mt-6 w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 focus:outline-none focus:ring focus:ring-green-300 transition duration-200 ease-in-out">
-            最終ポイント計算
+            ポイント計算
         </button>
 
         <div class="mt-6 text-center text-lg font-semibold text-gray-800">
-            最終合計ポイント: <span id="finalTotalPoints">0</span> Pt
+            最終獲得ポイント：<span id="finalTotalPoints">0</span> Pt
         </div>
 
         <div class="mt-4 text-sm text-gray-600">
-            <h3 class="font-semibold">獲得した槌の内訳:</h3>
-            <p>木槌: <span id="gainedWooden">0</span>, 鉄槌: <span id="gainedIron">0</span>, 銅槌: <span id="gainedCopper">0</span>, 銀槌: <span id="gainedSilver">0</span>, 金槌: <span id="gainedGold">0</span></p>
+            <h3 class="font-semibold">獲得した槌の内訳：</h3>
+            <p>木槌：<span id="gainedWooden">0</span>　鉄槌：<span id="gainedIron">0</span>　銅槌：<span id="gainedCopper">0</span>　銀槌：<span id="gainedSilver">0</span>　金槌：<span id="gainedGold">0</span></p>
         </div>
     </div>
 
