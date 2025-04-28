@@ -82,7 +82,7 @@
             iron: 10,
             copper: 20,
             silver: 50,
-            gold: 0
+            gold: 0 // 金槌は0ポイント
         };
 
         // Define the points required to gain hammers and the hammer gained
@@ -100,13 +100,6 @@
             { threshold_diff: 100, hammer: 'gold' }     // さらに100Pt獲得で金槌 (累計500Pt)
         ];
 
-        // Pre-calculate cumulative thresholds for easier checking
-        const cumulativeThresholds = gainThresholds.reduce((acc, threshold) => {
-            const lastThreshold = acc.length > 0 ? acc[acc.length - 1] : 0;
-            acc.push(lastThreshold + threshold.threshold_diff);
-            return acc;
-        }, []);
-
         /**
          * Calculates the total points from a given set of hammers.
          * @param {object} hammers - An object containing the count of each hammer type.
@@ -118,14 +111,14 @@
             total += (hammers.iron || 0) * pointsPerHammer.iron;
             total += (hammers.copper || 0) * pointsPerHammer.copper;
             total += (hammers.silver || 0) * pointsPerHammer.silver;
-            total += (hammers.gold || 0) * pointsPerHammer.gold; // 金槌は0ポイント
+            total += (hammers.gold || 0) * pointsPerHammer.gold;
             return total;
         }
 
         // Add event listener to the button
         calculateFinalBtn.addEventListener('click', () => {
             // Get the initial number of each hammer
-            let currentHammers = {
+            let hammersForNextIteration = {
                 wooden: parseInt(initialWoodenHammerInput.value) || 0,
                 iron: parseInt(initialIronHammerInput.value) || 0,
                 copper: parseInt(initialCopperHammerInput.value) || 0,
@@ -134,62 +127,77 @@
             };
 
             let totalPointsEarned = 0;
-            let currentThresholdIndex = 0; // 現在チェックしている閾値のインデックス
+            let currentCyclePointAccumulation = 0; // 現在の報酬サイクル内で蓄積されたポイント
+            let currentThresholdIndex = 0; // 現在チェックしている閾値のインデックス (0からgainThresholds.length-1)
             const totalGainedHammers = { wooden: 0, iron: 0, copper: 0, silver: 0, gold: 0 };
 
             // Iterative calculation loop
-            // ループは、現在の所持ハンマーからポイントが得られるか、
+            // ループは、次のイテレーションで処理すべきハンマーがあるか、
             // または獲得したポイントで新たな閾値を超えられる限り続きます。
             let iterationCount = 0;
-            const maxIterations = 10000; // 無限ループ防止のための最大試行回数
+            const maxIterations = 20000; // 無限ループ防止のための最大試行回数を増やしました
 
             while (iterationCount < maxIterations) {
+                // このイテレーションで処理するハンマーを取得し、次のイテレーション用のリストをリセット
+                const currentHammers = hammersForNextIteration;
+                hammersForNextIteration = { wooden: 0, iron: 0, copper: 0, silver: 0, gold: 0 }; // 次のラウンドで獲得するハンマー用
+
                 // 現在所持している槌から得られるポイントを計算
                 const pointsFromCurrentHammers = calculatePointsFromHammers(currentHammers);
 
-                // 現在の槌を消費（ポイントに変換）
-                currentHammers = { wooden: 0, iron: 0, copper: 0, silver: 0, gold: 0 };
+                // もし現在のハンマーからポイントが得られない、かつ、このラウンドで新たなハンマーも獲得できない場合、ループを終了
+                // これは、ポイント源となるハンマーが全て消費され、かつ、蓄積ポイントでも新たなハンマーが得られない状態です。
+                 if (pointsFromCurrentHammers === 0 && Object.values(currentHammers).every(count => count === 0)) {
+                    // ただし、pointsFromCurrentHammersが0でも、currentCyclePointAccumulationに
+                    // 過去のラウンドの残りポイントがあり、それが閾値を超える可能性があるので、
+                    // hammerGainedInThisIteration フラグも考慮する必要があります。
+                 }
+
 
                 // 獲得したポイントを累計ポイントに加算
                 totalPointsEarned += pointsFromCurrentHammers;
+                // 現在の報酬サイクル内の蓄積ポイントに加算
+                currentCyclePointAccumulation += pointsFromCurrentHammers;
 
-                let hammerGainedInThisIteration = false; // このイテレーションで槌を獲得したかどうかのフラグ
+                let gainedAnyHammerThisRound = false; // このイテレーションで槌を獲得したかどうかのフラグ
 
                 // 累計ポイントで達成できる閾値をチェックし、槌を獲得
                 // 現在の閾値インデックスから開始し、達成できる限りチェックを続ける
                 while (true) {
-                    // 次にチェックする閾値のポイント値
-                    const nextThresholdPoint = cumulativeThresholds[currentThresholdIndex];
+                    // 次にチェックする閾値のポイント差分
+                    const pointsNeededForNextThreshold = gainThresholds[currentThresholdIndex].threshold_diff;
 
-                    // 累計ポイントが次の閾値以上であれば、槌を獲得
-                    if (totalPointsEarned >= nextThresholdPoint) {
+                    // 現在のサイクル内蓄積ポイントが次の閾値差分以上であれば、槌を獲得
+                    if (currentCyclePointAccumulation >= pointsNeededForNextThreshold) {
                         const hammerTypeToGain = gainThresholds[currentThresholdIndex].hammer;
 
-                        // 獲得した槌を totalGainedHammers に加算
+                        // 獲得した槌を totalGainedHammers に加算 (最終的な内訳用)
                         totalGainedHammers[hammerTypeToGain]++;
-                        hammerGainedInThisIteration = true; // 槌を獲得したことを記録
+                        // 獲得した槌を次のイテレーションで処理するハンマーリストに加算
+                        hammersForNextIteration[hammerTypeToGain]++;
+                        gainedAnyHammerThisRound = true; // 槌を獲得したことを記録
 
-                        // 獲得した槌のポイントを累計ポイントに加算
-                        // これにより、獲得した槌がさらに次の槌の獲得につながる可能性があります。
-                        totalPointsEarned += pointsPerHammer[hammerTypeToGain];
+                        // 獲得に使用したポイントをサイクル内蓄積ポイントから減算
+                        currentCyclePointAccumulation -= pointsNeededForNextThreshold;
 
                         // 次の閾値インデックスに進む
                         currentThresholdIndex++;
 
                         // 閾値リストの最後に達したら、最初の閾値に戻る（ループ）
-                        if (currentThresholdIndex >= cumulativeThresholds.length) {
+                        if (currentThresholdIndex >= gainThresholds.length) {
                             currentThresholdIndex = 0;
+                            // サイクル内蓄積ポイントの残りはそのまま次のサイクルの開始ポイントとなる
                         }
                     } else {
-                        // 累計ポイントが次の閾値に満たない場合、このイテレーションでの閾値チェックは終了
+                        // サイクル内蓄積ポイントが次の閾値差分に満たない場合、このイテレーションでの閾値チェックは終了
                         break;
                     }
                 }
 
-                // このイテレーションで新たな槌を獲得しなかった場合、または現在の槌からポイントが得られなかった場合、ループを終了
+                // このイテレーションで新たな槌を獲得しなかった、かつ、現在の槌からポイントが得られなかった場合、ループを終了
                 // ポイントが得られなかった（pointsFromCurrentHammers === 0）かつ、
-                // 獲得したポイントで新たな槌も得られなかった（!hammerGainedInThisIteration）場合に停止します。
-                if (pointsFromCurrentHammers === 0 && !hammerGainedInThisIteration) {
+                // 獲得したポイントで新たな槌も得られなかった（!gainedAnyHammerThisRound）場合に停止します。
+                if (pointsFromCurrentHammers === 0 && !gainedAnyHammerThisRound) {
                     break;
                 }
 
