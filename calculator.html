@@ -3,239 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ミニゲーム ポイント計算</title>
+    <title>槌ポイント計算 (ループあり)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* 基本的なスタイル */
+        /* Custom styles if needed */
         body {
-            font-family: 'Arial', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #f0f0f0;
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        .container {
-            background-color: #fff;
-            padding: 30px;
-            border-radius: 10px; /* 角丸 */
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            text-align: center;
-            width: 100%;
-            max-width: 400px; /* 最大幅 */
-        }
-
-        h1 {
-            color: #333;
-            margin-bottom: 25px;
-            font-size: 1.8em;
-        }
-
-        .hammer-input {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 18px;
-            padding: 8px 0;
-            border-bottom: 1px solid #eee; /* 区切り線 */
-        }
-
-        .hammer-input:last-child {
-            border-bottom: none; /* 最後の要素に区切り線なし */
-        }
-
-        .hammer-input label {
-            margin-right: 15px;
-            font-size: 1.1em;
-            color: #555;
-            flex-grow: 1; /* ラベルが広がるように */
-            text-align: left;
-        }
-
-        .hammer-input input[type="number"] {
-            width: 70px; /* 入力欄の幅 */
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 5px; /* 角丸 */
-            text-align: right;
-            font-size: 1em;
-            box-sizing: border-box;
-            -moz-appearance: textfield; /* Firefoxでの矢印非表示 */
-        }
-
-        /* Chrome, Safari, Edge, Operaでの矢印非表示 */
-        .hammer-input input[type="number"]::-webkit-outer-spin-button,
-        .hammer-input input[type="number"]::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-
-
-        button {
-            padding: 12px 25px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px; /* 角丸 */
-            cursor: pointer;
-            font-size: 1.1em;
-            margin-top: 25px;
-            transition: background-color 0.3s ease, transform 0.1s ease; /* ホバーとクリック時のアニメーション */
-            width: 100%; /* ボタンの幅 */
-            box-sizing: border-box;
-        }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        button:active {
-            transform: scale(0.98); /* クリック時に少し縮小 */
-        }
-
-        .result-area {
-            margin-top: 30px;
-            font-size: 1.4em;
-            font-weight: bold;
-            color: #333;
-            text-align: center;
-            padding-top: 20px;
-            border-top: 1px solid #eee; /* 区切り線 */
-        }
-
-        #result {
-            color: #28a745; /* 結果のポイントの色 */
-            margin-left: 10px; /* ポイント表示の左余白 */
-        }
-
-        /* レスポンシブ対応 */
-        @media (max-width: 500px) {
-            .container {
-                padding: 20px;
-            }
-
-            h1 {
-                font-size: 1.5em;
-            }
-
-            .hammer-input {
-                flex-direction: column; /* 縦並び */
-                align-items: flex-start; /* 左寄せ */
-            }
-
-            .hammer-input label {
-                margin-bottom: 5px;
-                margin-right: 0;
-                text-align: left;
-            }
-
-            .hammer-input input[type="number"] {
-                width: 100%; /* 幅を100%に */
-                max-width: 100px; /* 最大幅を設定 */
-            }
-
-            button {
-                font-size: 1em;
-            }
-
-            .result-area {
-                font-size: 1.2em;
-            }
+            font-family: "Inter", sans-serif;
+            background-color: #f0f4f8; /* Light background */
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1>ミニゲーム ポイント計算</h1>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+        <h1 class="text-2xl font-bold text-center mb-6 text-gray-800">槌ポイント計算 (ループあり)</h1>
 
-        <div class="hammer-input">
-            <label for="woodHammer">木槌 (1Pt):</label>
-            <input type="number" id="woodHammer" min="0" value="0">
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">初期所持の槌</h2>
+            <div class="flex items-center justify-between">
+                <label for="initialWoodenHammer" class="text-gray-700">木槌:</label>
+                <input type="number" id="initialWoodenHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
+            </div>
+
+            <div class="flex items-center justify-between">
+                <label for="initialIronHammer" class="text-gray-700">鉄槌:</label>
+                <input type="number" id="initialIronHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
+            </div>
+
+            <div class="flex items-center justify-between">
+                <label for="initialCopperHammer" class="text-gray-700">銅槌:</label>
+                <input type="number" id="initialCopperHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
+            </div>
+
+            <div class="flex items-center justify-between">
+                <label for="initialSilverHammer" class="text-gray-700">銀槌:</label>
+                <input type="number" id="initialSilverHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
+            </div>
+
+            <div class="flex items-center justify-between">
+                <label for="initialGoldHammer" class="text-gray-700">金槌:</label>
+                <input type="number" id="initialGoldHammer" value="0" min="0" class="w-24 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:border-blue-300">
+            </div>
         </div>
 
-        <div class="hammer-input">
-            <label for="ironHammer">鉄槌 (10Pt):</label>
-            <input type="number" id="ironHammer" min="0" value="0">
+        <button id="calculateFinalBtn" class="mt-6 w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 focus:outline-none focus:ring focus:ring-green-300 transition duration-200 ease-in-out">
+            最終ポイント計算
+        </button>
+
+        <div class="mt-6 text-center text-lg font-semibold text-gray-800">
+            最終合計ポイント: <span id="finalTotalPoints">0</span> Pt
         </div>
 
-        <div class="hammer-input">
-            <label for="copperHammer">銅槌 (20Pt):</label>
-            <input type="number" id="copperHammer" min="0" value="0">
-        </div>
-
-        <div class="hammer-input">
-            <label for="silverHammer">銀槌 (50Pt):</label>
-            <input type="number" id="silverHammer" min="0" value="0">
-        </div>
-
-        <div class="hammer-input">
-            <label for="goldHammer">金槌 (0Pt):</label>
-            <input type="number" id="goldHammer" min="0" value="0">
-        </div>
-
-        <button id="calculateButton">ポイントを計算</button>
-
-        <div class="result-area">
-            <p>合計ポイント: <span id="result">0</span> Pt</p>
+        <div class="mt-4 text-sm text-gray-600">
+            <h3 class="font-semibold">獲得した槌の内訳:</h3>
+            <p>木槌: <span id="gainedWooden">0</span>, 鉄槌: <span id="gainedIron">0</span>, 銅槌: <span id="gainedCopper">0</span>, 銀槌: <span id="gainedSilver">0</span>, 金槌: <span id="gainedGold">0</span></p>
         </div>
     </div>
 
     <script>
-        // Get references to the input elements for each hammer type
-        const woodHammerInput = document.getElementById('woodHammer');
-        const ironHammerInput = document.getElementById('ironHammer');
-        const copperHammerInput = document.getElementById('copperHammer');
-        const silverHammerInput = document.getElementById('silverHammer');
-        const goldHammerInput = document.getElementById('goldHammer');
+        // Get references to the input fields and result display
+        const initialWoodenHammerInput = document.getElementById('initialWoodenHammer');
+        const initialIronHammerInput = document.getElementById('initialIronHammer');
+        const initialCopperHammerInput = document.getElementById('initialCopperHammer');
+        const initialSilverHammerInput = document.getElementById('initialSilverHammer');
+        const initialGoldHammerInput = document.getElementById('initialGoldHammer');
+        const calculateFinalBtn = document.getElementById('calculateFinalBtn');
+        const finalTotalPointsSpan = document.getElementById('finalTotalPoints');
 
-        // Get references to the calculate button and the result display element
-        const calculateButton = document.getElementById('calculateButton');
-        const resultSpan = document.getElementById('result');
+        // Get references for gained hammers breakdown
+        const gainedWoodenSpan = document.getElementById('gainedWooden');
+        const gainedIronSpan = document.getElementById('gainedIron');
+        const gainedCopperSpan = document.getElementById('gainedCopper');
+        const gainedSilverSpan = document.getElementById('gainedSilver');
+        const gainedGoldSpan = document.getElementById('gainedGold');
 
-        // Define the points awarded for each hammer type
+        // Define the point values for each hammer type
         const pointsPerHammer = {
-            wood: 1,
+            wooden: 1,
             iron: 10,
             copper: 20,
             silver: 50,
             gold: 0
         };
 
-        // Function to calculate and display the total points
-        function calculateTotalPoints() {
-            // Get the quantity of each hammer, parse as integer, default to 0 if invalid
-            const woodQuantity = parseInt(woodHammerInput.value, 10) || 0;
-            const ironQuantity = parseInt(ironHammerInput.value, 10) || 0;
-            const copperQuantity = parseInt(copperHammerInput.value, 10) || 0;
-            const silverQuantity = parseInt(silverHammerInput.value, 10) || 0;
-            const goldQuantity = parseInt(goldHammerInput.value, 10) || 0;
+        // Define the points required to gain hammers and the hammer gained
+        // threshold_diff: 前回の閾値からの差分ポイント
+        // hammer: 獲得できる槌の種類
+        const gainThresholds = [
+            { threshold_diff: 10, hammer: 'iron' },    // 10Pt獲得で鉄槌
+            { threshold_diff: 20, hammer: 'iron' },    // さらに20Pt獲得で鉄槌 (累計30Pt)
+            { threshold_diff: 30, hammer: 'copper' },  // さらに30Pt獲得で銅槌 (累計60Pt)
+            { threshold_diff: 40, hammer: 'silver' },  // さらに40Pt獲得で銀槌 (累計100Pt)
+            { threshold_diff: 80, hammer: 'silver' },  // さらに80Pt獲得で銀槌 (累計180Pt)
+            { threshold_diff: 100, hammer: 'silver' }, // さらに100Pt獲得で銀槌 (累計280Pt)
+            { threshold_diff: 70, hammer: 'copper' },  // さらに70Pt獲得で銅槌 (累計350Pt)
+            { threshold_diff: 50, hammer: 'silver' },  // さらに50Pt獲得で銀槌 (累計400Pt)
+            { threshold_diff: 100, hammer: 'gold' }     // さらに100Pt獲得で金槌 (累計500Pt)
+        ];
 
-            // Calculate the total points
-            const totalPoints =
-                (woodQuantity * pointsPerHammer.wood) +
-                (ironQuantity * pointsPerHammer.iron) +
-                (copperQuantity * pointsPerHammer.copper) +
-                (silverQuantity * pointsPerHammer.silver) +
-                (goldQuantity * pointsPerHammer.gold);
+        // Pre-calculate cumulative thresholds for easier checking
+        const cumulativeThresholds = gainThresholds.reduce((acc, threshold) => {
+            const lastThreshold = acc.length > 0 ? acc[acc.length - 1] : 0;
+            acc.push(lastThreshold + threshold.threshold_diff);
+            return acc;
+        }, []);
 
-            // Update the result display element with the calculated total points
-            resultSpan.textContent = totalPoints;
+        /**
+         * Calculates the total points from a given set of hammers.
+         * @param {object} hammers - An object containing the count of each hammer type.
+         * @returns {number} The total points.
+         */
+        function calculatePointsFromHammers(hammers) {
+            let total = 0;
+            total += (hammers.wooden || 0) * pointsPerHammer.wooden;
+            total += (hammers.iron || 0) * pointsPerHammer.iron;
+            total += (hammers.copper || 0) * pointsPerHammer.copper;
+            total += (hammers.silver || 0) * pointsPerHammer.silver;
+            total += (hammers.gold || 0) * pointsPerHammer.gold; // 金槌は0ポイント
+            return total;
         }
 
-        // Add an event listener to the button to trigger the calculation on click
-        calculateButton.addEventListener('click', calculateTotalPoints);
+        // Add event listener to the button
+        calculateFinalBtn.addEventListener('click', () => {
+            // Get the initial number of each hammer
+            let currentHammers = {
+                wooden: parseInt(initialWoodenHammerInput.value) || 0,
+                iron: parseInt(initialIronHammerInput.value) || 0,
+                copper: parseInt(initialCopperHammerInput.value) || 0,
+                silver: parseInt(initialSilverHammerInput.value) || 0,
+                gold: parseInt(initialGoldHammerInput.value) || 0
+            };
 
-        /*
-        // Optional: Add event listeners to input fields for real-time calculation as values change
-        woodHammerInput.addEventListener('input', calculateTotalPoints);
-        ironHammerInput.addEventListener('input', calculateTotalPoints);
-        copperHammerInput.addEventListener('input', calculateTotalPoints);
-        silverHammerInput.addEventListener('input', calculateTotalPoints);
-        goldHammerInput.addEventListener('input', calculateTotalPoints);
-        */
+            let totalPointsEarned = 0;
+            let currentThresholdIndex = 0; // 現在チェックしている閾値のインデックス
+            const totalGainedHammers = { wooden: 0, iron: 0, copper: 0, silver: 0, gold: 0 };
+
+            // Iterative calculation loop
+            // ループは、現在の所持ハンマーからポイントが得られるか、
+            // または獲得したポイントで新たな閾値を超えられる限り続きます。
+            let iterationCount = 0;
+            const maxIterations = 10000; // 無限ループ防止のための最大試行回数
+
+            while (iterationCount < maxIterations) {
+                // 現在所持している槌から得られるポイントを計算
+                const pointsFromCurrentHammers = calculatePointsFromHammers(currentHammers);
+
+                // 現在の槌を消費（ポイントに変換）
+                currentHammers = { wooden: 0, iron: 0, copper: 0, silver: 0, gold: 0 };
+
+                // 獲得したポイントを累計ポイントに加算
+                totalPointsEarned += pointsFromCurrentHammers;
+
+                let hammerGainedInThisIteration = false; // このイテレーションで槌を獲得したかどうかのフラグ
+
+                // 累計ポイントで達成できる閾値をチェックし、槌を獲得
+                // 現在の閾値インデックスから開始し、達成できる限りチェックを続ける
+                while (true) {
+                    // 次にチェックする閾値のポイント値
+                    const nextThresholdPoint = cumulativeThresholds[currentThresholdIndex];
+
+                    // 累計ポイントが次の閾値以上であれば、槌を獲得
+                    if (totalPointsEarned >= nextThresholdPoint) {
+                        const hammerTypeToGain = gainThresholds[currentThresholdIndex].hammer;
+
+                        // 獲得した槌を totalGainedHammers に加算
+                        totalGainedHammers[hammerTypeToGain]++;
+                        hammerGainedInThisIteration = true; // 槌を獲得したことを記録
+
+                        // 獲得した槌のポイントを累計ポイントに加算
+                        // これにより、獲得した槌がさらに次の槌の獲得につながる可能性があります。
+                        totalPointsEarned += pointsPerHammer[hammerTypeToGain];
+
+                        // 次の閾値インデックスに進む
+                        currentThresholdIndex++;
+
+                        // 閾値リストの最後に達したら、最初の閾値に戻る（ループ）
+                        if (currentThresholdIndex >= cumulativeThresholds.length) {
+                            currentThresholdIndex = 0;
+                        }
+                    } else {
+                        // 累計ポイントが次の閾値に満たない場合、このイテレーションでの閾値チェックは終了
+                        break;
+                    }
+                }
+
+                // このイテレーションで新たな槌を獲得しなかった場合、または現在の槌からポイントが得られなかった場合、ループを終了
+                // ポイントが得られなかった（pointsFromCurrentHammers === 0）かつ、
+                // 獲得したポイントで新たな槌も得られなかった（!hammerGainedInThisIteration）場合に停止します。
+                if (pointsFromCurrentHammers === 0 && !hammerGainedInThisIteration) {
+                    break;
+                }
+
+                iterationCount++;
+            }
+
+            if (iterationCount >= maxIterations) {
+                console.warn("最大試行回数に達しました。計算が収束しない可能性があります。");
+                // 無限ループの可能性を示唆する場合、ユーザーに通知するなどの処理を追加することもできます。
+            }
+
+            // 最終的な累計ポイントを表示
+            finalTotalPointsSpan.textContent = totalPointsEarned;
+
+            // 獲得した槌の内訳を表示
+            gainedWoodenSpan.textContent = totalGainedHammers.wooden;
+            gainedIronSpan.textContent = totalGainedHammers.iron;
+            gainedCopperSpan.textContent = totalGainedHammers.copper;
+            gainedSilverSpan.textContent = totalGainedHammers.silver;
+            gainedGoldSpan.textContent = totalGainedHammers.gold;
+        });
     </script>
 </body>
 </html>
