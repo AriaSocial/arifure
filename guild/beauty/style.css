@@ -1,0 +1,44 @@
+/* CSS部分 */
+
+/* 各スプレッドシートコンテナのスタイル */
+.spreadsheet-container {
+    /* 最初はすべて非表示 */
+    display: none;
+    width: 100%; /* 必要に応じて調整 */
+    overflow: hidden; /* 隠れている部分を非表示 */
+    margin-bottom: 20px; /* 各スプレッドシートの下にスペース */
+}
+
+/* 表示状態のスタイル */
+.spreadsheet-container.is-visible {
+     display: block; /* is-visibleクラスが付いたら表示 */
+}
+
+/* iframe自体のスタイル */
+.spreadsheet-container iframe {
+    display: block; /* 親要素が表示されても、iframe自体も表示 */
+    width: 100%;
+    height: 600px; /* iframeの固定の高さ。必要に応じて調整 */
+    border: none;
+}
+
+/* ボタンのスタイル（任意） */
+.toggle-button {
+    padding: 7px 10px; /* パディングを調整してスリムにしました */
+    font-size: 16px;
+    cursor: pointer;
+    margin-bottom: 10px; /* ボタンの下に少しスペース */
+    display: block; /* ボタンを縦に並べる */
+    /* Optional: Add some basic styling for better touch targets */
+    border-radius: 5px;
+    background-color: #4169e1; /* 背景色をロイヤルブルーに変更しました */
+    color: white;
+    border: none;
+    text-align: center;
+    text-decoration: none;
+    transition: background-color 0.3s ease;
+}
+
+.toggle-button:hover {
+    background-color: #355ac8; /* ホバー時の色も調整 */
+}
