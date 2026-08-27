@@ -1,15 +1,16 @@
 import type { SyncSummary } from "./types"
 
-interface LocalizeChangePreview {
+export interface LocalizeChange {
   type: "Added" | "Updated" | "Deleted"
   key: string
-  value?: string
+  value: string
 }
 
-interface NoticeChangePreview {
-  type: "Added" | "Updated" | "Deleted"
+export interface NoticeChange {
+  type: "Added" | "Updated"
   key: string
-  title?: string
+  title: string
+  content: string
 }
 
 interface TextDisplayComponent {
@@ -37,11 +38,24 @@ interface ComponentsV2Payload {
 
 const IS_COMPONENTS_V2 = 1 << 15
 const ACCENT_COLOR = 0x00bcd1
-const MAX_DETAIL_LENGTH = 3_500
+const LOCALIZE_VISIBLE_CHANGE_LIMIT = 12
+const LOCALIZE_VALUE_PREVIEW_LENGTH = 120
+const LOCALIZE_FILE_PREVIEW_LENGTH = 900
+const MAX_COMPONENTS_PER_MESSAGE = 40
+const NOTICE_COMPONENTS_PER_CONTAINER = 6
+const MAX_NOTICE_CONTAINERS_PER_MESSAGE = Math.floor(
+  MAX_COMPONENTS_PER_MESSAGE / NOTICE_COMPONENTS_PER_CONTAINER,
+)
+const MAX_NOTICE_TEXT_PER_MESSAGE = 3_800
+const MAX_NOTICE_TITLE_LENGTH = 240
 
-function truncate(value: string, maxLength = 120): string {
+function truncateSingleLine(value: string, maxLength: number): string {
   const normalized = value.replace(/\r?\n/g, " ")
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized
+}
+
+function truncateMultiline(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
 }
 
 function escapeMarkdown(value: string): string {
@@ -52,13 +66,134 @@ function escapeInlineCode(value: string): string {
   return value.replace(/`/g, "｀").replace(/\r?\n/g, " ")
 }
 
-function buildPayload(title: string, summary: SyncSummary, detailLines: readonly string[]): ComponentsV2Payload {
-  const detailText = detailLines.join("\n") || "コンテンツhashが更新されました。"
-  const details =
-    detailText.length > MAX_DETAIL_LENGTH
-      ? `${detailText.slice(0, MAX_DETAIL_LENGTH)}…`
-      : detailText
-  const timestamp = Math.floor(Date.now() / 1000)
+function codeBlockPreview(value: string): string {
+  const preview = truncateMultiline(value, LOCALIZE_FILE_PREVIEW_LENGTH).replace(/```/g, "｀｀｀")
+  return `\`\`\`text\n${preview}\n\`\`\``
+}
+
+function webhookTarget(webhookUrl: string, withComponents: boolean): URL {
+  const target = new URL(webhookUrl)
+  target.searchParams.set("wait", "true")
+  if (withComponents) target.searchParams.set("with_components", "true")
+  return target
+}
+
+async function postComponentsWebhook(
+  webhookUrl: string,
+  payload: ComponentsV2Payload,
+): Promise<void> {
+  try {
+    const response = await fetch(webhookTarget(webhookUrl, true), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      console.error("Discord Components V2 webhook failed", response.status, await response.text())
+    }
+  } catch (error) {
+    console.error("Discord Components V2 webhook request failed", error)
+  }
+}
+
+async function postFileWebhook(
+  webhookUrl: string,
+  filename: string,
+  content: string,
+): Promise<void> {
+  try {
+    const form = new FormData()
+    form.set(
+      "payload_json",
+      JSON.stringify({
+        allowed_mentions: { parse: [] },
+        attachments: [{ id: 0, filename }],
+      }),
+    )
+    form.set(
+      "files[0]",
+      new Blob([content], { type: "text/plain;charset=utf-8" }),
+      filename,
+    )
+
+    const response = await fetch(webhookTarget(webhookUrl, false), {
+      method: "POST",
+      body: form,
+    })
+
+    if (!response.ok) {
+      console.error("Discord attachment webhook failed", response.status, await response.text())
+    }
+  } catch (error) {
+    console.error("Discord attachment webhook request failed", error)
+  }
+}
+
+function buildLocalizeFile(changes: readonly LocalizeChange[], detectedAt: number): string {
+  const lines = [`Detected: ${detectedAt}`, ""]
+
+  for (const change of changes) {
+    lines.push(`${change.type}: ${change.key}`, change.value, "")
+  }
+
+  return `${lines.join("\n").trimEnd()}\n`
+}
+
+function buildLocalizePayload(
+  summary: SyncSummary,
+  changes: readonly LocalizeChange[],
+  detectedAt: number,
+  fileContent: string,
+): ComponentsV2Payload {
+  const components: Array<TextDisplayComponent | SeparatorComponent> = [
+    {
+      type: 10,
+      content: "## Source updated · Localize.json",
+    },
+    {
+      type: 10,
+      content: `**Added** ${summary.added.toLocaleString("en-US")}  ·  **Updated** ${summary.updated.toLocaleString("en-US")}  ·  **Deleted** ${summary.deleted.toLocaleString("en-US")}`,
+    },
+    {
+      type: 14,
+      divider: true,
+      spacing: 1,
+    },
+  ]
+
+  for (const change of changes.slice(0, LOCALIZE_VISIBLE_CHANGE_LIMIT)) {
+    const value = escapeMarkdown(
+      truncateSingleLine(change.value, LOCALIZE_VALUE_PREVIEW_LENGTH),
+    )
+    components.push({
+      type: 10,
+      content: `**${change.type}: \`${escapeInlineCode(change.key)}\`**\n${value}`,
+    })
+  }
+
+  if (changes.length > LOCALIZE_VISIBLE_CHANGE_LIMIT) {
+    components.push({
+      type: 10,
+      content: `-# ほか ${changes.length - LOCALIZE_VISIBLE_CHANGE_LIMIT} 件の変更があります。`,
+    })
+  }
+
+  components.push(
+    {
+      type: 14,
+      divider: false,
+      spacing: 1,
+    },
+    {
+      type: 10,
+      content: `-# Detected <t:${detectedAt}:R>`,
+    },
+    {
+      type: 10,
+      content: codeBlockPreview(fileContent),
+    },
+  )
 
   return {
     flags: IS_COMPONENTS_V2,
@@ -67,99 +202,115 @@ function buildPayload(title: string, summary: SyncSummary, detailLines: readonly
       {
         type: 17,
         accent_color: ACCENT_COLOR,
-        components: [
-          {
-            type: 10,
-            content: `## ${title}`,
-          },
-          {
-            type: 10,
-            content: `**Added** ${summary.added.toLocaleString("en-US")}  ·  **Updated** ${summary.updated.toLocaleString("en-US")}  ·  **Deleted** ${summary.deleted.toLocaleString("en-US")}`,
-          },
-          {
-            type: 14,
-            divider: true,
-            spacing: 1,
-          },
-          {
-            type: 10,
-            content: details,
-          },
-          {
-            type: 14,
-            divider: false,
-            spacing: 1,
-          },
-          {
-            type: 10,
-            content: `-# Detected <t:${timestamp}:R>`,
-          },
-        ],
+        components,
       },
     ],
-  }
-}
-
-async function postWebhook(webhookUrl: string, payload: ComponentsV2Payload): Promise<void> {
-  try {
-    const target = new URL(webhookUrl)
-    target.searchParams.set("with_components", "true")
-    target.searchParams.set("wait", "true")
-
-    const response = await fetch(target, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-
-    if (!response.ok) {
-      console.error("Discord webhook failed", response.status, await response.text())
-    }
-  } catch (error) {
-    console.error("Discord webhook request failed", error)
   }
 }
 
 export async function notifyLocalize(
   webhookUrl: string,
   summary: SyncSummary,
-  previews: readonly LocalizeChangePreview[],
+  changes: readonly LocalizeChange[],
+  detectedAt: number,
 ): Promise<void> {
-  const lines = previews.map((change) => {
-    const suffix =
-      change.value === undefined
-        ? ""
-        : ` — ${escapeMarkdown(truncate(change.value))}`
-    return `- **${change.type}** · \`${escapeInlineCode(change.key)}\`${suffix}`
-  })
-  if (summary.added + summary.updated + summary.deleted > previews.length) {
-    lines.push("- ほかにも変更があります。")
+  const fileContent = buildLocalizeFile(changes, detectedAt)
+
+  await postComponentsWebhook(
+    webhookUrl,
+    buildLocalizePayload(summary, changes, detectedAt, fileContent),
+  )
+
+  // Discord's Execute Webhook endpoint currently rejects files[n] on a message
+  // carrying IS_COMPONENTS_V2. Send the timestamp-named attachment immediately
+  // after the V2 notification as a second, file-only webhook message.
+  await postFileWebhook(webhookUrl, String(detectedAt), fileContent)
+}
+
+function buildNoticeContainer(change: NoticeChange): {
+  container: ContainerComponent
+  textLength: number
+} {
+  const title = escapeMarkdown(
+    truncateSingleLine(change.title, MAX_NOTICE_TITLE_LENGTH),
+  )
+  const footer = `-# ${change.type}: \`${escapeInlineCode(change.key)}\``
+  const fixedTextLength = title.length + footer.length + 3 // account for "## "
+  const bodyBudget = Math.max(256, MAX_NOTICE_TEXT_PER_MESSAGE - fixedTextLength)
+  const body = escapeMarkdown(truncateMultiline(change.content, bodyBudget))
+
+  return {
+    textLength: fixedTextLength + body.length,
+    container: {
+      type: 17,
+      accent_color: ACCENT_COLOR,
+      components: [
+        {
+          type: 10,
+          content: `## ${title}`,
+        },
+        {
+          type: 14,
+          divider: true,
+          spacing: 1,
+        },
+        {
+          type: 10,
+          content: body,
+        },
+        {
+          type: 14,
+          divider: false,
+          spacing: 1,
+        },
+        {
+          type: 10,
+          content: footer,
+        },
+      ],
+    },
+  }
+}
+
+function packNoticeMessages(changes: readonly NoticeChange[]): ComponentsV2Payload[] {
+  const payloads: ComponentsV2Payload[] = []
+  let containers: ContainerComponent[] = []
+  let textLength = 0
+
+  const flush = () => {
+    if (containers.length === 0) return
+    payloads.push({
+      flags: IS_COMPONENTS_V2,
+      allowed_mentions: { parse: [] },
+      components: containers,
+    })
+    containers = []
+    textLength = 0
   }
 
-  await postWebhook(
-    webhookUrl,
-    buildPayload("Source updated · Localize.json", summary, lines),
-  )
+  for (const change of changes) {
+    const built = buildNoticeContainer(change)
+    const exceedsComponentLimit =
+      containers.length >= MAX_NOTICE_CONTAINERS_PER_MESSAGE
+    const exceedsTextLimit =
+      containers.length > 0 &&
+      textLength + built.textLength > MAX_NOTICE_TEXT_PER_MESSAGE
+
+    if (exceedsComponentLimit || exceedsTextLimit) flush()
+
+    containers.push(built.container)
+    textLength += built.textLength
+  }
+
+  flush()
+  return payloads
 }
 
 export async function notifyNotices(
   webhookUrl: string,
-  summary: SyncSummary,
-  previews: readonly NoticeChangePreview[],
+  changes: readonly NoticeChange[],
 ): Promise<void> {
-  const lines = previews.map((change) => {
-    const title =
-      change.title === undefined
-        ? escapeMarkdown(change.key)
-        : escapeMarkdown(truncate(change.title, 160))
-    return `- **${change.type}** · ${title}`
-  })
-  if (summary.added + summary.updated + summary.deleted > previews.length) {
-    lines.push("- ほかにも変更があります。")
+  for (const payload of packNoticeMessages(changes)) {
+    await postComponentsWebhook(webhookUrl, payload)
   }
-
-  await postWebhook(
-    webhookUrl,
-    buildPayload("Source updated · index", summary, lines),
-  )
 }

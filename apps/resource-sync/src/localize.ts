@@ -1,5 +1,5 @@
 import { getResourceContentHash, updateResourceState } from "./db"
-import { notifyLocalize } from "./discord"
+import { notifyLocalize, type LocalizeChange } from "./discord"
 import { decodeUtf8, sha256BytesHex, sha256Hex } from "./hash"
 import type { Env, SyncSummary } from "./types"
 
@@ -8,11 +8,16 @@ const BASE_GAME_ENTRY_URL = "https://h5.g123.jp/game/arifure?lang=ja"
 const TARGET_FILE_SUFFIX = "/g123/i18n/ja/texts/Localize.json"
 const HASH_CONCURRENCY = 200
 const WRITE_CHUNK_SIZE = 100
-const PREVIEW_LIMIT = 20
+const VALUE_READ_CHUNK_SIZE = 80
 
 interface ExistingLocalizeRow {
   key: string
   content_hash: string
+}
+
+interface ExistingLocalizeValueRow {
+  key: string
+  value: string
 }
 
 export async function syncLocalize(env: Env): Promise<SyncSummary> {
@@ -83,6 +88,37 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
   }
 
   const now = Date.now()
+  const detectedAt = Math.floor(now / 1000)
+  let discordChanges: LocalizeChange[] | null = null
+
+  if (env.DISCORD_WEBHOOK_LOCALIZE) {
+    // Added/updated values are already available in the upstream payload. Only
+    // deleted values require a targeted D1 read before those rows are removed.
+    const deletedValues = await getExistingValues(env.DB, deleted)
+    discordChanges = []
+
+    for (const key of added) {
+      discordChanges.push({
+        type: "Added",
+        key,
+        value: incoming.get(key)?.value ?? "",
+      })
+    }
+    for (const key of updated) {
+      discordChanges.push({
+        type: "Updated",
+        key,
+        value: incoming.get(key)?.value ?? "",
+      })
+    }
+    for (const key of deleted) {
+      discordChanges.push({
+        type: "Deleted",
+        key,
+        value: deletedValues.get(key) ?? "",
+      })
+    }
+  }
 
   // Build and execute prepared statements one chunk at a time instead of
   // materializing statements for the complete dataset in Worker memory.
@@ -127,30 +163,46 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
     deleted: deleted.length,
   }
 
-  if (env.DISCORD_WEBHOOK_LOCALIZE && summary.changed) {
-    const previews: Array<{
-      type: "Added" | "Updated" | "Deleted"
-      key: string
-      value?: string
-    }> = []
-
-    for (const key of added) {
-      if (previews.length >= PREVIEW_LIMIT) break
-      previews.push({ type: "Added", key, value: incoming.get(key)?.value ?? "" })
-    }
-    for (const key of updated) {
-      if (previews.length >= PREVIEW_LIMIT) break
-      previews.push({ type: "Updated", key, value: incoming.get(key)?.value ?? "" })
-    }
-    for (const key of deleted) {
-      if (previews.length >= PREVIEW_LIMIT) break
-      previews.push({ type: "Deleted", key })
-    }
-
-    await notifyLocalize(env.DISCORD_WEBHOOK_LOCALIZE, summary, previews)
+  if (
+    env.DISCORD_WEBHOOK_LOCALIZE &&
+    summary.changed &&
+    discordChanges !== null
+  ) {
+    await notifyLocalize(
+      env.DISCORD_WEBHOOK_LOCALIZE,
+      summary,
+      discordChanges,
+      detectedAt,
+    )
   }
 
   return summary
+}
+
+async function getExistingValues(
+  db: D1Database,
+  keys: readonly string[],
+): Promise<Map<string, string>> {
+  const values = new Map<string, string>()
+
+  for (let offset = 0; offset < keys.length; offset += VALUE_READ_CHUNK_SIZE) {
+    const chunk = keys.slice(offset, offset + VALUE_READ_CHUNK_SIZE)
+    if (chunk.length === 0) continue
+
+    const placeholders = chunk.map(() => "?").join(",")
+    const result = await db
+      .prepare(
+        `SELECT key, value
+         FROM localize_entries
+         WHERE locale = ? AND key IN (${placeholders})`,
+      )
+      .bind("ja", ...chunk)
+      .all<ExistingLocalizeValueRow>()
+
+    for (const row of result.results) values.set(row.key, row.value)
+  }
+
+  return values
 }
 
 async function resolveLocalizeUrl(): Promise<string> {

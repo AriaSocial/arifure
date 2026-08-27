@@ -1,11 +1,10 @@
 import { getResourceContentHash, runWriteChunks, updateResourceState } from "./db"
-import { notifyNotices } from "./discord"
+import { notifyNotices, type NoticeChange } from "./discord"
 import { decodeUtf8, hashCanonical, sha256BytesHex } from "./hash"
 import type { Env, SyncSummary } from "./types"
 
 const RESOURCE = "notices"
 const SOURCE_URL = "https://arifure-slb.pro.g123-cpp.com/gm/index.php?g=&m=data&a=out_notice&game=arifure&owner="
-const PREVIEW_LIMIT = 20
 
 interface UpstreamNotice {
   title: Record<string, string>
@@ -107,30 +106,41 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
     deleted: deleted.length,
   }
 
-  if (env.DISCORD_WEBHOOK_INDEX && summary.changed) {
-    const previews: Array<{
-      type: "Added" | "Updated" | "Deleted"
-      key: string
-      title?: string
-    }> = []
+  // Deleted notices are retained in D1 as inactive history but intentionally do
+  // not generate Discord notifications.
+  if (env.DISCORD_WEBHOOK_INDEX && added.length + updated.length > 0) {
+    const changes: NoticeChange[] = []
 
     for (const key of added) {
-      if (previews.length >= PREVIEW_LIMIT) break
-      previews.push({ type: "Added", key, title: incoming.get(key)?.value.title.ja ?? key })
-    }
-    for (const key of updated) {
-      if (previews.length >= PREVIEW_LIMIT) break
-      previews.push({ type: "Updated", key, title: incoming.get(key)?.value.title.ja ?? key })
-    }
-    for (const key of deleted) {
-      if (previews.length >= PREVIEW_LIMIT) break
-      previews.push({ type: "Deleted", key })
+      const notice = incoming.get(key)?.value
+      if (notice === undefined) continue
+      changes.push({
+        type: "Added",
+        key,
+        title: localizedValue(notice.title, key),
+        content: localizedValue(notice.content, ""),
+      })
     }
 
-    await notifyNotices(env.DISCORD_WEBHOOK_INDEX, summary, previews)
+    for (const key of updated) {
+      const notice = incoming.get(key)?.value
+      if (notice === undefined) continue
+      changes.push({
+        type: "Updated",
+        key,
+        title: localizedValue(notice.title, key),
+        content: localizedValue(notice.content, ""),
+      })
+    }
+
+    await notifyNotices(env.DISCORD_WEBHOOK_INDEX, changes)
   }
 
   return summary
+}
+
+function localizedValue(values: Record<string, string>, fallback: string): string {
+  return values.ja ?? Object.values(values)[0] ?? fallback
 }
 
 async function hashNotice(value: unknown): Promise<HashedNotice> {
