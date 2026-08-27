@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { Circle, X } from "lucide-react"
 
 import quizData from "@/data/quiz.json"
 import { Badge } from "@/components/ui/badge"
@@ -64,10 +65,15 @@ export default function QuizSearch() {
           {results.map((quiz, index) => (
             <Card key={`${quiz.question}-${index}`}>
               <CardHeader>
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   <CardTitle className="text-base leading-relaxed">{quiz.question}</CardTitle>
                   <Badge variant={quiz.answer === "y" ? "secondary" : "destructive"}>
-                    {quiz.answer === "y" ? "○" : "×"}
+                    {quiz.answer === "y" ? (
+                      <Circle aria-hidden="true" className="size-4" strokeWidth={2.5} />
+                    ) : (
+                      <X aria-hidden="true" className="size-4" strokeWidth={2.5} />
+                    )}
+                    <span className="sr-only">{quiz.answer === "y" ? "正しい" : "誤り"}</span>
                   </Badge>
                 </div>
               </CardHeader>
