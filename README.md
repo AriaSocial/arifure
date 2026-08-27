@@ -2,7 +2,7 @@
 
 Arifure Wiki 向けの補助Webアプリケーションとゲームリソース同期処理を管理するモノレポです。
 
-## 新アーキテクチャ
+## アーキテクチャ
 
 - `apps/web`: Vite + React Router Framework Mode による静的Webアプリケーション
   - `/gp-calculator`: ガチャポイント計算機
@@ -12,8 +12,11 @@ Arifure Wiki 向けの補助Webアプリケーションとゲームリソース�
 
 UIはshadcn/ui（Base UI）を標準とし、低レベルUI primitiveの独自実装は原則行いません。
 
-## 移行方針
+## Cloudflare
 
-再構築中は旧ディレクトリを参照用として残します。新実装の確認後に、旧 `gp-calculator` / `quiz` / `resource` および不要なレガシーコードを削除します。
+Cloudflare上のD1・Worker・Secrets等のremote resourceは、コードの再構築とは分離してprovisioningします。
 
-Cloudflare上のD1・Worker・Secrets等のremote resourceは、このリポジトリ上の再構築確認後に作成します。
+- Web: Cloudflare Workers Static Assets
+- Resource sync: Cloudflare Workers Cron Trigger
+- Data: Cloudflare D1
+- Discord Webhook URL: Workers Secrets
