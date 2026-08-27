@@ -5,6 +5,7 @@ import type { Env, SyncSummary } from "./types"
 
 const RESOURCE = "notices"
 const SOURCE_URL = "https://arifure-slb.pro.g123-cpp.com/gm/index.php?g=&m=data&a=out_notice&game=arifure&owner="
+const PREVIEW_LIMIT = 20
 
 interface UpstreamNotice {
   title: Record<string, string>
@@ -24,16 +25,10 @@ interface ExistingNoticeRow {
   content_hash: string
 }
 
-interface PreparedNotice {
+interface HashedNotice {
   key: string
   value: UpstreamNotice
   contentHash: string
-  translations: Array<{
-    locale: string
-    title: string
-    content: string
-    contentHash: string
-  }>
 }
 
 export async function syncNotices(env: Env): Promise<SyncSummary> {
@@ -52,9 +47,9 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
   const parsed = JSON.parse(rawContent) as unknown
   if (!Array.isArray(parsed)) throw new Error("Notice schema changed: expected an array")
 
-  // Notice preparation is cold-path work and notices are a small collection;
-  // process them concurrently only after the dataset-level hash changed.
-  const prepared = await Promise.all(parsed.map((value) => prepareNotice(value)))
+  // First hash each whole notice. Translation hashes are deliberately deferred
+  // until after this comparison so unchanged notices incur no per-locale hashing.
+  const prepared = await Promise.all(parsed.map((value) => hashNotice(value)))
   const incoming = new Map(prepared.map((notice) => [notice.key, notice]))
 
   if (incoming.size !== prepared.length) {
@@ -82,8 +77,8 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
 
   const now = Date.now()
 
-  // Each changed notice is one atomic D1 batch. Unchanged notices never load or
-  // rewrite translations.
+  // Only changed notices compute translation hashes and rewrite translation rows.
+  // Each notice is committed atomically with its translations.
   for (const key of [...added, ...updated]) {
     const notice = incoming.get(key)
     if (notice !== undefined) await writeNotice(env.DB, notice, now)
@@ -96,6 +91,7 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
   )
   await runWriteChunks(env.DB, removalWrites)
 
+  // As with Localize, the dataset hash is the commit marker and is written last.
   await updateResourceState(env.DB, RESOURCE, datasetHash, incoming.size, SOURCE_URL, now)
 
   const summary: SyncSummary = {
@@ -106,18 +102,58 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
     deleted: deleted.length,
   }
 
-  const previews = [
-    ...added.map((key) => ({ type: "Added" as const, key, title: incoming.get(key)?.value.title.ja ?? key })),
-    ...updated.map((key) => ({ type: "Updated" as const, key, title: incoming.get(key)?.value.title.ja ?? key })),
-    ...deleted.map((key) => ({ type: "Deleted" as const, key })),
-  ]
-  await notifyNotices(env.DISCORD_WEBHOOK_INDEX, summary, previews)
+  if (env.DISCORD_WEBHOOK_INDEX && summary.changed) {
+    const previews: Array<{
+      type: "Added" | "Updated" | "Deleted"
+      key: string
+      title?: string
+    }> = []
+
+    for (const key of added) {
+      if (previews.length >= PREVIEW_LIMIT) break
+      previews.push({ type: "Added", key, title: incoming.get(key)?.value.title.ja ?? key })
+    }
+    for (const key of updated) {
+      if (previews.length >= PREVIEW_LIMIT) break
+      previews.push({ type: "Updated", key, title: incoming.get(key)?.value.title.ja ?? key })
+    }
+    for (const key of deleted) {
+      if (previews.length >= PREVIEW_LIMIT) break
+      previews.push({ type: "Deleted", key })
+    }
+
+    await notifyNotices(env.DISCORD_WEBHOOK_INDEX, summary, previews)
+  }
 
   return summary
 }
 
-async function writeNotice(db: D1Database, notice: PreparedNotice, now: number): Promise<void> {
+async function hashNotice(value: unknown): Promise<HashedNotice> {
+  if (!isUpstreamNotice(value)) throw new Error("Notice schema changed: invalid notice item")
+
+  return {
+    key: `${value.sort}:${value.lastsTime}`,
+    value,
+    contentHash: await hashCanonical(value),
+  }
+}
+
+async function writeNotice(db: D1Database, notice: HashedNotice, now: number): Promise<void> {
   const value = notice.value
+  const locales = new Set([...Object.keys(value.title), ...Object.keys(value.content)])
+  const translations = await Promise.all(
+    Array.from(locales).map(async (locale) => {
+      const title = value.title[locale] ?? ""
+      const content = value.content[locale] ?? ""
+      return {
+        locale,
+        title,
+        content,
+        contentHash: await hashCanonical({ title, content }),
+      }
+    }),
+  )
+
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
@@ -155,7 +191,7 @@ async function writeNotice(db: D1Database, notice: PreparedNotice, now: number):
     db.prepare("DELETE FROM notice_translations WHERE notice_key = ?1").bind(notice.key),
   ]
 
-  for (const translation of notice.translations) {
+  for (const translation of translations) {
     statements.push(
       db
         .prepare(
@@ -175,32 +211,6 @@ async function writeNotice(db: D1Database, notice: PreparedNotice, now: number):
   }
 
   await db.batch(statements)
-}
-
-async function prepareNotice(value: unknown): Promise<PreparedNotice> {
-  if (!isUpstreamNotice(value)) throw new Error("Notice schema changed: invalid notice item")
-
-  const key = `${value.sort}:${value.lastsTime}`
-  const locales = new Set([...Object.keys(value.title), ...Object.keys(value.content)])
-  const translations = await Promise.all(
-    Array.from(locales).map(async (locale) => {
-      const title = value.title[locale] ?? ""
-      const content = value.content[locale] ?? ""
-      return {
-        locale,
-        title,
-        content,
-        contentHash: await hashCanonical({ title, content }),
-      }
-    }),
-  )
-
-  return {
-    key,
-    value,
-    contentHash: await hashCanonical(value),
-    translations,
-  }
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

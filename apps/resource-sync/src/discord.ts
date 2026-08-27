@@ -17,9 +17,7 @@ function truncate(value: string, maxLength = 120): string {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized
 }
 
-async function postWebhook(webhookUrl: string | undefined, payload: unknown): Promise<void> {
-  if (!webhookUrl) return
-
+async function postWebhook(webhookUrl: string, payload: unknown): Promise<void> {
   try {
     const response = await fetch(webhookUrl, {
       method: "POST",
@@ -36,13 +34,11 @@ async function postWebhook(webhookUrl: string | undefined, payload: unknown): Pr
 }
 
 export async function notifyLocalize(
-  webhookUrl: string | undefined,
+  webhookUrl: string,
   summary: SyncSummary,
-  previews: LocalizeChangePreview[],
+  previews: readonly LocalizeChangePreview[],
 ): Promise<void> {
-  if (!summary.changed) return
-
-  const lines = previews.slice(0, 20).map((change) => {
+  const lines = previews.map((change) => {
     const suffix = change.value === undefined ? "" : ` — ${truncate(change.value)}`
     return `• ${change.type}: \`${change.key}\`${suffix}`
   })
@@ -67,16 +63,17 @@ export async function notifyLocalize(
 }
 
 export async function notifyNotices(
-  webhookUrl: string | undefined,
+  webhookUrl: string,
   summary: SyncSummary,
-  previews: NoticeChangePreview[],
+  previews: readonly NoticeChangePreview[],
 ): Promise<void> {
-  if (!summary.changed) return
-
-  const lines = previews.slice(0, 20).map((change) => {
+  const lines = previews.map((change) => {
     const title = change.title === undefined ? change.key : truncate(change.title, 160)
     return `• ${change.type}: ${title}`
   })
+  if (summary.added + summary.updated + summary.deleted > previews.length) {
+    lines.push("• ほかにも変更があります。")
+  }
 
   await postWebhook(webhookUrl, {
     embeds: [

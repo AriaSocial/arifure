@@ -1,4 +1,4 @@
-import { getResourceContentHash, runWriteChunks, updateResourceState } from "./db"
+import { getResourceContentHash, updateResourceState } from "./db"
 import { notifyLocalize } from "./discord"
 import { sha256Hex } from "./hash"
 import type { Env, SyncSummary } from "./types"
@@ -7,6 +7,8 @@ const RESOURCE = "localize:ja"
 const BASE_GAME_ENTRY_URL = "https://h5.g123.jp/game/arifure?lang=ja"
 const TARGET_FILE_SUFFIX = "/g123/i18n/ja/texts/Localize.json"
 const HASH_CONCURRENCY = 200
+const WRITE_CHUNK_SIZE = 100
+const PREVIEW_LIMIT = 20
 
 interface ExistingLocalizeRow {
   key: string
@@ -35,8 +37,9 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
   const incomingEntries = Object.entries(parsed as Record<string, unknown>)
   const incoming = new Map<string, { value: string; contentHash: string }>()
 
-  // Hashing is cold-path work: this executes only after the dataset-level hash changed.
-  // Bound concurrency to avoid creating thousands of simultaneous WebCrypto jobs.
+  // Per-record hashing is cold-path work and only runs after the single-row
+  // dataset hash check reports a change. Bound WebCrypto concurrency to keep
+  // memory predictable for the multi-megabyte localization source.
   for (let offset = 0; offset < incomingEntries.length; offset += HASH_CONCURRENCY) {
     const chunk = incomingEntries.slice(offset, offset + HASH_CONCURRENCY)
     const hashed = await Promise.all(
@@ -50,8 +53,7 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
     for (const [key, entry] of hashed) incoming.set(key, entry)
   }
 
-  // Read hashes only. Values are not loaded unless they are already present in
-  // the fetched upstream dataset, keeping D1 rows-read and transfer minimal.
+  // Compare only keys and hashes; unchanged values are never read back from D1.
   const existingResult = await env.DB
     .prepare("SELECT key, content_hash FROM localize_entries WHERE locale = ?1")
     .bind("ja")
@@ -74,14 +76,15 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
 
   const now = Date.now()
 
-  // Materialize prepared statements per batch rather than for the entire
-  // 3.7 MB dataset. This bounds Worker memory during large upstream changes.
+  // Build and execute prepared statements one chunk at a time instead of
+  // materializing statements for the complete dataset in Worker memory.
   const changedKeys = [...added, ...updated]
-  for (let offset = 0; offset < changedKeys.length; offset += 100) {
-    const statements = changedKeys.slice(offset, offset + 100).flatMap((key) => {
+  for (let offset = 0; offset < changedKeys.length; offset += WRITE_CHUNK_SIZE) {
+    const statements: D1PreparedStatement[] = []
+    for (const key of changedKeys.slice(offset, offset + WRITE_CHUNK_SIZE)) {
       const entry = incoming.get(key)
-      if (entry === undefined) return []
-      return [
+      if (entry === undefined) continue
+      statements.push(
         env.DB
           .prepare(
             `INSERT INTO localize_entries (locale, key, value, content_hash, updated_at)
@@ -92,20 +95,20 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
                updated_at = excluded.updated_at`,
           )
           .bind("ja", key, entry.value, entry.contentHash, now),
-      ]
-    })
+      )
+    }
     if (statements.length > 0) await env.DB.batch(statements)
   }
 
-  for (let offset = 0; offset < deleted.length; offset += 100) {
+  for (let offset = 0; offset < deleted.length; offset += WRITE_CHUNK_SIZE) {
     const statements = deleted
-      .slice(offset, offset + 100)
+      .slice(offset, offset + WRITE_CHUNK_SIZE)
       .map((key) => env.DB.prepare("DELETE FROM localize_entries WHERE locale = ?1 AND key = ?2").bind("ja", key))
     if (statements.length > 0) await env.DB.batch(statements)
   }
 
-  // Commit the dataset hash last. Any earlier failure therefore causes the
-  // next one-minute Cron run to retry the complete comparison.
+  // Commit the dataset hash last. A partial failure therefore re-enters the
+  // comparison path on the next one-minute Cron run and converges idempotently.
   await updateResourceState(env.DB, RESOURCE, datasetHash, incoming.size, sourceUrl, now)
 
   const summary: SyncSummary = {
@@ -116,12 +119,28 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
     deleted: deleted.length,
   }
 
-  const previews = [
-    ...added.map((key) => ({ type: "Added" as const, key, value: incoming.get(key)?.value ?? "" })),
-    ...updated.map((key) => ({ type: "Updated" as const, key, value: incoming.get(key)?.value ?? "" })),
-    ...deleted.map((key) => ({ type: "Deleted" as const, key })),
-  ]
-  await notifyLocalize(env.DISCORD_WEBHOOK_LOCALIZE, summary, previews)
+  if (env.DISCORD_WEBHOOK_LOCALIZE && summary.changed) {
+    const previews: Array<{
+      type: "Added" | "Updated" | "Deleted"
+      key: string
+      value?: string
+    }> = []
+
+    for (const key of added) {
+      if (previews.length >= PREVIEW_LIMIT) break
+      previews.push({ type: "Added", key, value: incoming.get(key)?.value ?? "" })
+    }
+    for (const key of updated) {
+      if (previews.length >= PREVIEW_LIMIT) break
+      previews.push({ type: "Updated", key, value: incoming.get(key)?.value ?? "" })
+    }
+    for (const key of deleted) {
+      if (previews.length >= PREVIEW_LIMIT) break
+      previews.push({ type: "Deleted", key })
+    }
+
+    await notifyLocalize(env.DISCORD_WEBHOOK_LOCALIZE, summary, previews)
+  }
 
   return summary
 }
