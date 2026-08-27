@@ -16,8 +16,6 @@ type SearchableQuizEntry = QuizEntry & {
   normalizedQuestion: string
 }
 
-// Quiz data is immutable for the lifetime of the static bundle. Normalize once
-// at module initialization instead of lower-casing every question on every keystroke.
 const quizzes: readonly SearchableQuizEntry[] = (quizData as QuizEntry[]).map((quiz) => ({
   ...quiz,
   normalizedQuestion: quiz.question.toLocaleLowerCase("ja-JP"),
@@ -47,7 +45,12 @@ export default function QuizSearch() {
           <Label htmlFor="quiz-query">問題文を検索</Label>
           <Input
             id="quiz-query"
+            name="quiz-query"
             type="search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             placeholder="検索語を入力"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
