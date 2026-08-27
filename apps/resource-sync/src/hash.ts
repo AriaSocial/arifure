@@ -7,7 +7,11 @@ export async function sha256Hex(value: string): Promise<string> {
 
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") {
-    return JSON.stringify(value)
+    const serialized = JSON.stringify(value)
+    if (serialized === undefined) {
+      throw new TypeError("canonicalJson does not support undefined values")
+    }
+    return serialized
   }
 
   if (Array.isArray(value)) {
