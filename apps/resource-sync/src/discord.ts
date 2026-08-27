@@ -40,7 +40,6 @@ const IS_COMPONENTS_V2 = 1 << 15
 const ACCENT_COLOR = 0x00bcd1
 const LOCALIZE_VISIBLE_CHANGE_LIMIT = 12
 const LOCALIZE_VALUE_PREVIEW_LENGTH = 120
-const LOCALIZE_FILE_PREVIEW_LENGTH = 900
 const MAX_COMPONENTS_PER_MESSAGE = 40
 const NOTICE_COMPONENTS_PER_CONTAINER = 6
 const MAX_NOTICE_CONTAINERS_PER_MESSAGE = Math.floor(
@@ -64,11 +63,6 @@ function escapeMarkdown(value: string): string {
 
 function escapeInlineCode(value: string): string {
   return value.replace(/`/g, "｀").replace(/\r?\n/g, " ")
-}
-
-function codeBlockPreview(value: string): string {
-  const preview = truncateMultiline(value, LOCALIZE_FILE_PREVIEW_LENGTH).replace(/```/g, "｀｀｀")
-  return `\`\`\`text\n${preview}\n\`\`\``
 }
 
 function webhookTarget(webhookUrl: string, withComponents: boolean): URL {
@@ -144,7 +138,6 @@ function buildLocalizePayload(
   summary: SyncSummary,
   changes: readonly LocalizeChange[],
   detectedAt: number,
-  fileContent: string,
 ): ComponentsV2Payload {
   const components: Array<TextDisplayComponent | SeparatorComponent> = [
     {
@@ -189,10 +182,6 @@ function buildLocalizePayload(
       type: 10,
       content: `-# Detected <t:${detectedAt}:R>`,
     },
-    {
-      type: 10,
-      content: codeBlockPreview(fileContent),
-    },
   )
 
   return {
@@ -218,13 +207,13 @@ export async function notifyLocalize(
 
   await postComponentsWebhook(
     webhookUrl,
-    buildLocalizePayload(summary, changes, detectedAt, fileContent),
+    buildLocalizePayload(summary, changes, detectedAt),
   )
 
-  // Discord's Execute Webhook endpoint currently rejects files[n] on a message
-  // carrying IS_COMPONENTS_V2. Send the timestamp-named attachment immediately
-  // after the V2 notification as a second, file-only webhook message.
-  await postFileWebhook(webhookUrl, String(detectedAt), fileContent)
+  // Discord's Execute Webhook endpoint rejects files[n] on a message carrying
+  // IS_COMPONENTS_V2, so the complete change list is sent immediately afterward
+  // as a separate timestamp-named text attachment.
+  await postFileWebhook(webhookUrl, `${detectedAt}.txt`, fileContent)
 }
 
 function buildNoticeContainer(change: NoticeChange): {
