@@ -3,9 +3,13 @@ import { Link } from "react-router"
 
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { createPageMeta } from "@/lib/meta"
 
 export function meta() {
-  return [{ title: "Arifure Tools" }, { name: "description", content: "Arifure Wiki向けの補助ツール" }]
+  return createPageMeta(
+    "Arifure Tools",
+    "『ありふれた職業で世界最強』のガチャポイント計算やクイズ正誤検索を利用できる補助ツール集です。",
+  )
 }
 
 const tools = [
