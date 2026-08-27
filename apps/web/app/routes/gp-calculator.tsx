@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { calculateGp, emptyHammerCounts, type HammerCounts, type HammerType } from "@arifure/gp-calculator"
+import { calculateGp, emptyHammerCounts, type CalculateGpResult, type HammerCounts, type HammerType } from "@arifure/gp-calculator"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,26 +20,43 @@ const HAMMERS: ReadonlyArray<{ type: HammerType; label: string }> = [
   { type: "gold", label: "金槌" },
 ]
 
+function initialResult(): CalculateGpResult {
+  return calculateGp({ hammers: emptyHammerCounts(), weeklyEvent: false })
+}
+
 export default function GpCalculator() {
   const [hammers, setHammers] = useState<HammerCounts>(() => emptyHammerCounts())
   const [weeklyEvent, setWeeklyEvent] = useState(false)
-  const [result, setResult] = useState(() => calculateGp({ hammers, weeklyEvent }))
+  const [result, setResult] = useState<CalculateGpResult>(initialResult)
+  const [error, setError] = useState<string | null>(null)
 
   function updateHammer(type: HammerType, rawValue: string) {
     const value = rawValue === "" ? 0 : Math.max(0, Math.trunc(Number(rawValue)))
     setHammers((current) => ({ ...current, [type]: Number.isFinite(value) ? value : 0 }))
+    setError(null)
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setResult(calculateGp({ hammers, weeklyEvent }))
+
+    try {
+      setResult(calculateGp({ hammers, weeklyEvent }))
+      setError(null)
+    } catch (cause) {
+      if (cause instanceof RangeError) {
+        setError("入力値が大きすぎて安全に計算できません。各槌の個数を小さくしてください。")
+        return
+      }
+      throw cause
+    }
   }
 
   function reset() {
     const empty = emptyHammerCounts()
     setHammers(empty)
     setWeeklyEvent(false)
-    setResult(calculateGp({ hammers: empty, weeklyEvent: false }))
+    setResult(initialResult())
+    setError(null)
   }
 
   return (
@@ -62,6 +79,7 @@ export default function GpCalculator() {
                     inputMode="numeric"
                     value={hammers[type]}
                     onChange={(event) => updateHammer(type, event.currentTarget.value)}
+                    aria-invalid={error !== null}
                   />
                 </div>
               ))}
@@ -72,8 +90,19 @@ export default function GpCalculator() {
                 <Label htmlFor="weekly-event">週間イベント</Label>
                 <p className="text-sm text-muted-foreground">週間イベントの追加鉄槌報酬を計算に含めます。</p>
               </div>
-              <Switch id="weekly-event" checked={weeklyEvent} onCheckedChange={setWeeklyEvent} />
+              <Switch
+                id="weekly-event"
+                checked={weeklyEvent}
+                onCheckedChange={(checked) => {
+                  setWeeklyEvent(checked)
+                  setError(null)
+                }}
+              />
             </div>
+
+            {error ? (
+              <p className="text-sm text-destructive" role="alert">{error}</p>
+            ) : null}
           </CardContent>
           <CardFooter>
             <Button type="submit">ポイント計算</Button>
