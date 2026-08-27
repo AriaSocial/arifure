@@ -1,6 +1,6 @@
 import { getResourceContentHash, runWriteChunks, updateResourceState } from "./db"
 import { notifyNotices } from "./discord"
-import { hashCanonical, sha256Hex } from "./hash"
+import { decodeUtf8, hashCanonical, sha256BytesHex } from "./hash"
 import type { Env, SyncSummary } from "./types"
 
 const RESOURCE = "notices"
@@ -32,19 +32,24 @@ interface HashedNotice {
 }
 
 export async function syncNotices(env: Env): Promise<SyncSummary> {
+  // Start the one-row D1 lookup before waiting on the upstream network request.
+  const storedHashPromise = getResourceContentHash(env.DB, RESOURCE)
   const response = await fetch(SOURCE_URL)
   if (!response.ok) throw new Error(`Notice fetch failed: ${response.status}`)
 
-  const rawContent = await response.text()
-  if (rawContent.length === 0) throw new Error("Notice response was empty")
+  const sourceBytes = await response.arrayBuffer()
+  if (sourceBytes.byteLength === 0) throw new Error("Notice response was empty")
 
-  const datasetHash = await sha256Hex(rawContent)
-  const storedHash = await getResourceContentHash(env.DB, RESOURCE)
+  const [datasetHash, storedHash] = await Promise.all([
+    sha256BytesHex(sourceBytes),
+    storedHashPromise,
+  ])
   if (storedHash === datasetHash) {
     return { resource: RESOURCE, changed: false, added: 0, updated: 0, deleted: 0 }
   }
 
-  const parsed = JSON.parse(rawContent) as unknown
+  // Decode/parse only after the byte-level dataset hash changed.
+  const parsed = JSON.parse(decodeUtf8(sourceBytes)) as unknown
   if (!Array.isArray(parsed)) throw new Error("Notice schema changed: expected an array")
 
   // First hash each whole notice. Translation hashes are deliberately deferred

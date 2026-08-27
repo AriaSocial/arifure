@@ -1,6 +1,6 @@
 import { getResourceContentHash, updateResourceState } from "./db"
 import { notifyLocalize } from "./discord"
-import { sha256Hex } from "./hash"
+import { decodeUtf8, sha256BytesHex, sha256Hex } from "./hash"
 import type { Env, SyncSummary } from "./types"
 
 const RESOURCE = "localize:ja"
@@ -16,19 +16,27 @@ interface ExistingLocalizeRow {
 }
 
 export async function syncLocalize(env: Env): Promise<SyncSummary> {
-  const sourceUrl = await resolveLocalizeUrl()
+  // The D1 hot-path lookup and dynamic source resolution are independent, so
+  // overlap them instead of paying both network latencies serially.
+  const [sourceUrl, storedHash] = await Promise.all([
+    resolveLocalizeUrl(),
+    getResourceContentHash(env.DB, RESOURCE),
+  ])
+
   const response = await fetch(sourceUrl)
   if (!response.ok) throw new Error(`Localize fetch failed: ${response.status}`)
 
-  const rawContent = await response.text()
-  if (rawContent.length === 0) throw new Error("Localize response was empty")
+  // Hash the response bytes directly. On the overwhelmingly common unchanged
+  // path we never allocate/decode the ~3.7 MB JSON string at all.
+  const sourceBytes = await response.arrayBuffer()
+  if (sourceBytes.byteLength === 0) throw new Error("Localize response was empty")
 
-  const datasetHash = await sha256Hex(rawContent)
-  const storedHash = await getResourceContentHash(env.DB, RESOURCE)
+  const datasetHash = await sha256BytesHex(sourceBytes)
   if (storedHash === datasetHash) {
     return { resource: RESOURCE, changed: false, added: 0, updated: 0, deleted: 0 }
   }
 
+  const rawContent = decodeUtf8(sourceBytes)
   const parsed = JSON.parse(rawContent) as unknown
   if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
     throw new Error("Localize schema changed: expected a key-value object")
