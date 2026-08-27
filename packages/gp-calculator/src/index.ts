@@ -22,10 +22,7 @@ const POINTS_PER_HAMMER: HammerCounts = {
   gold: 0,
 }
 
-const NORMAL_THRESHOLDS: ReadonlyArray<{
-  thresholdDiff: number
-  hammer: HammerType
-}> = [
+const NORMAL_THRESHOLDS = [
   { thresholdDiff: 10, hammer: "iron" },
   { thresholdDiff: 20, hammer: "iron" },
   { thresholdDiff: 30, hammer: "copper" },
@@ -35,43 +32,50 @@ const NORMAL_THRESHOLDS: ReadonlyArray<{
   { thresholdDiff: 70, hammer: "copper" },
   { thresholdDiff: 50, hammer: "silver" },
   { thresholdDiff: 100, hammer: "gold" },
-]
+] as const satisfies ReadonlyArray<{ thresholdDiff: number; hammer: HammerType }>
 
-const WEEKLY_THRESHOLDS: ReadonlyArray<{
-  threshold: number
-  hammer: HammerType
-  count: number
-}> = [
-  { threshold: 1000, hammer: "iron", count: 10 },
-  { threshold: 2000, hammer: "iron", count: 10 },
-  { threshold: 4000, hammer: "iron", count: 10 },
-  { threshold: 6000, hammer: "iron", count: 10 },
-  { threshold: 8000, hammer: "iron", count: 10 },
-  { threshold: 9000, hammer: "iron", count: 10 },
-  { threshold: 10000, hammer: "iron", count: 10 },
-  { threshold: 12000, hammer: "iron", count: 10 },
-  { threshold: 14000, hammer: "iron", count: 10 },
-  { threshold: 16000, hammer: "iron", count: 10 },
-  { threshold: 17000, hammer: "iron", count: 10 },
-  { threshold: 18000, hammer: "iron", count: 10 },
-  { threshold: 20000, hammer: "iron", count: 10 },
-  { threshold: 22000, hammer: "iron", count: 10 },
-  { threshold: 24000, hammer: "iron", count: 10 },
-  { threshold: 25000, hammer: "iron", count: 10 },
-  { threshold: 26000, hammer: "iron", count: 10 },
-  { threshold: 28000, hammer: "iron", count: 10 },
-  { threshold: 30000, hammer: "iron", count: 10 },
-]
+const WEEKLY_THRESHOLDS = [
+  1000,
+  2000,
+  4000,
+  6000,
+  8000,
+  9000,
+  10000,
+  12000,
+  14000,
+  16000,
+  17000,
+  18000,
+  20000,
+  22000,
+  24000,
+  25000,
+  26000,
+  28000,
+  30000,
+] as const
 
-const HAMMER_TYPES: readonly HammerType[] = [
-  "wooden",
-  "iron",
-  "copper",
-  "silver",
-  "gold",
-]
+// One complete normal reward cycle consumes 500 Pt and yields
+// 2 iron + 2 copper + 4 silver + 1 gold = 260 Pt worth of hammers.
+// Complete cycles can therefore be collapsed into a single arithmetic operation.
+const NORMAL_CYCLE_COST = 500
+const NORMAL_CYCLE_REWARD_POINTS = 260
+const NORMAL_CYCLE_REWARDS: HammerCounts = {
+  wooden: 0,
+  iron: 2,
+  copper: 2,
+  silver: 4,
+  gold: 1,
+}
 
-const MAX_ITERATIONS = 2000
+const WEEKLY_IRON_REWARD_COUNT = 10
+const WEEKLY_IRON_REWARD_POINTS = POINTS_PER_HAMMER.iron * WEEKLY_IRON_REWARD_COUNT
+
+// For a safe-integer initial point total, normal rewards shrink each complete
+// generation to at most 52% of the previous one. 64 generations is therefore
+// a defensive invariant guard rather than a work budget.
+const MAX_GENERATIONS = 64
 
 export function emptyHammerCounts(): HammerCounts {
   return { wooden: 0, iron: 0, copper: 0, silver: 0, gold: 0 }
@@ -79,86 +83,120 @@ export function emptyHammerCounts(): HammerCounts {
 
 function normalizeCount(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return 0
-  return Math.max(0, Math.trunc(value))
-}
-
-function normalizeHammers(input: Partial<HammerCounts>): HammerCounts {
-  return {
-    wooden: normalizeCount(input.wooden),
-    iron: normalizeCount(input.iron),
-    copper: normalizeCount(input.copper),
-    silver: normalizeCount(input.silver),
-    gold: normalizeCount(input.gold),
+  const normalized = Math.max(0, Math.trunc(value))
+  if (!Number.isSafeInteger(normalized)) {
+    throw new RangeError("Hammer count exceeds JavaScript's safe integer range")
   }
+  return normalized
 }
 
-function pointsFromHammers(hammers: HammerCounts): number {
-  return HAMMER_TYPES.reduce(
-    (total, type) => total + hammers[type] * POINTS_PER_HAMMER[type],
-    0,
-  )
+function initialPoints(input: Partial<HammerCounts>): number {
+  const wooden = normalizeCount(input.wooden)
+  const iron = normalizeCount(input.iron)
+  const copper = normalizeCount(input.copper)
+  const silver = normalizeCount(input.silver)
+  normalizeCount(input.gold) // gold is intentionally worth 0 Pt, but still validate it.
+
+  const points = wooden + iron * 10 + copper * 20 + silver * 50
+  if (!Number.isSafeInteger(points)) {
+    throw new RangeError("Initial point total exceeds JavaScript's safe integer range")
+  }
+  return points
 }
 
 /**
- * Legacy calculator behavior expressed as a deterministic, UI-independent function.
- * Reward hammers are fed back into the next iteration exactly as in the old implementation.
+ * Calculates the legacy GP result without iterating once per reward threshold.
+ *
+ * The legacy implementation walked every 10/20/.../100 Pt threshold individually.
+ * Here we align to a cycle boundary, collapse all complete 500 Pt cycles in O(1),
+ * and only walk the at-most-eight thresholds on either edge. Reward generations
+ * still feed back recursively, preserving the original externally visible result.
  */
 export function calculateGp(input: CalculateGpInput): CalculateGpResult {
-  let hammersForProcessing = normalizeHammers(input.hammers)
+  let pendingPoints = initialPoints(input.hammers)
   let totalPoints = 0
   let pointsSinceNormalThreshold = 0
   let normalThresholdIndex = 0
   let weeklyThresholdIndex = 0
-  let iterations = 0
+  let generations = 0
   const gainedHammers = emptyHammerCounts()
 
-  while (iterations < MAX_ITERATIONS) {
-    const pointsThisIteration = pointsFromHammers(hammersForProcessing)
-    const normalThreshold = NORMAL_THRESHOLDS[normalThresholdIndex]
-    const weeklyThreshold = WEEKLY_THRESHOLDS[weeklyThresholdIndex]
+  while (pendingPoints > 0) {
+    totalPoints += pendingPoints
+    if (!Number.isSafeInteger(totalPoints)) {
+      throw new RangeError("Calculated point total exceeds JavaScript's safe integer range")
+    }
 
-    const canGainNormal =
-      normalThreshold !== undefined &&
-      pointsSinceNormalThreshold + pointsThisIteration >= normalThreshold.thresholdDiff
-    const canGainWeekly =
-      input.weeklyEvent &&
-      weeklyThreshold !== undefined &&
-      totalPoints + pointsThisIteration >= weeklyThreshold.threshold
+    pointsSinceNormalThreshold += pendingPoints
+    let nextGenerationPoints = 0
 
-    if (pointsThisIteration === 0 && !canGainNormal && !canGainWeekly) break
-
-    totalPoints += pointsThisIteration
-    pointsSinceNormalThreshold += pointsThisIteration
-    hammersForProcessing = emptyHammerCounts()
-
-    while (true) {
+    // If the previous generation stopped part-way through a cycle, finish only
+    // the remaining prefix first. This costs at most eight threshold checks.
+    while (normalThresholdIndex !== 0) {
       const threshold = NORMAL_THRESHOLDS[normalThresholdIndex]
       if (threshold === undefined || pointsSinceNormalThreshold < threshold.thresholdDiff) break
 
-      gainedHammers[threshold.hammer] += 1
-      hammersForProcessing[threshold.hammer] += 1
       pointsSinceNormalThreshold -= threshold.thresholdDiff
+      gainedHammers[threshold.hammer] += 1
+      nextGenerationPoints += POINTS_PER_HAMMER[threshold.hammer]
       normalThresholdIndex = (normalThresholdIndex + 1) % NORMAL_THRESHOLDS.length
     }
 
-    if (input.weeklyEvent) {
-      while (true) {
-        const threshold = WEEKLY_THRESHOLDS[weeklyThresholdIndex]
-        if (threshold === undefined || totalPoints < threshold.threshold) break
+    if (normalThresholdIndex === 0) {
+      // Bulk-process every complete normal cycle instead of visiting nine
+      // thresholds for each 500 Pt block.
+      const completeCycles = Math.floor(pointsSinceNormalThreshold / NORMAL_CYCLE_COST)
+      if (completeCycles > 0) {
+        pointsSinceNormalThreshold -= completeCycles * NORMAL_CYCLE_COST
+        gainedHammers.iron += completeCycles * NORMAL_CYCLE_REWARDS.iron
+        gainedHammers.copper += completeCycles * NORMAL_CYCLE_REWARDS.copper
+        gainedHammers.silver += completeCycles * NORMAL_CYCLE_REWARDS.silver
+        gainedHammers.gold += completeCycles * NORMAL_CYCLE_REWARDS.gold
+        nextGenerationPoints += completeCycles * NORMAL_CYCLE_REWARD_POINTS
+      }
 
-        gainedHammers[threshold.hammer] += threshold.count
-        hammersForProcessing[threshold.hammer] += threshold.count
+      // Less than one cycle remains, so this loop executes at most eight times.
+      while (true) {
+        const threshold = NORMAL_THRESHOLDS[normalThresholdIndex]
+        if (threshold === undefined || pointsSinceNormalThreshold < threshold.thresholdDiff) break
+
+        pointsSinceNormalThreshold -= threshold.thresholdDiff
+        gainedHammers[threshold.hammer] += 1
+        nextGenerationPoints += POINTS_PER_HAMMER[threshold.hammer]
+        normalThresholdIndex = (normalThresholdIndex + 1) % NORMAL_THRESHOLDS.length
+      }
+    }
+
+    // Weekly thresholds are finite and monotonic. Across the entire calculation
+    // this loop can execute only WEEKLY_THRESHOLDS.length (19) times total.
+    if (input.weeklyEvent) {
+      while (
+        weeklyThresholdIndex < WEEKLY_THRESHOLDS.length &&
+        totalPoints >= WEEKLY_THRESHOLDS[weeklyThresholdIndex]!
+      ) {
+        gainedHammers.iron += WEEKLY_IRON_REWARD_COUNT
+        nextGenerationPoints += WEEKLY_IRON_REWARD_POINTS
         weeklyThresholdIndex += 1
       }
     }
 
-    iterations += 1
+    pendingPoints = nextGenerationPoints
+    generations += 1
+
+    if (generations >= MAX_GENERATIONS && pendingPoints > 0) {
+      return {
+        totalPoints,
+        gainedHammers,
+        iterations: generations,
+        converged: false,
+      }
+    }
   }
 
   return {
     totalPoints,
     gainedHammers,
-    iterations,
-    converged: iterations < MAX_ITERATIONS,
+    iterations: generations,
+    converged: true,
   }
 }

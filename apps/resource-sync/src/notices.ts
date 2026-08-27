@@ -1,4 +1,4 @@
-import { getResourceState, runWriteChunks, updateResourceState } from "./db"
+import { getResourceContentHash, runWriteChunks, updateResourceState } from "./db"
 import { notifyNotices } from "./discord"
 import { hashCanonical, sha256Hex } from "./hash"
 import type { Env, SyncSummary } from "./types"
@@ -44,14 +44,16 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
   if (rawContent.length === 0) throw new Error("Notice response was empty")
 
   const datasetHash = await sha256Hex(rawContent)
-  const state = await getResourceState(env.DB, RESOURCE)
-  if (state?.contentHash === datasetHash) {
+  const storedHash = await getResourceContentHash(env.DB, RESOURCE)
+  if (storedHash === datasetHash) {
     return { resource: RESOURCE, changed: false, added: 0, updated: 0, deleted: 0 }
   }
 
   const parsed = JSON.parse(rawContent) as unknown
   if (!Array.isArray(parsed)) throw new Error("Notice schema changed: expected an array")
 
+  // Notice preparation is cold-path work and notices are a small collection;
+  // process them concurrently only after the dataset-level hash changed.
   const prepared = await Promise.all(parsed.map((value) => prepareNotice(value)))
   const incoming = new Map(prepared.map((notice) => [notice.key, notice]))
 
@@ -80,8 +82,8 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
 
   const now = Date.now()
 
-  // Each notice is updated in one atomic D1 batch. If a batch fails, neither the
-  // notice hash nor its translations are partially committed.
+  // Each changed notice is one atomic D1 batch. Unchanged notices never load or
+  // rewrite translations.
   for (const key of [...added, ...updated]) {
     const notice = incoming.get(key)
     if (notice !== undefined) await writeNotice(env.DB, notice, now)
@@ -94,8 +96,6 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
   )
   await runWriteChunks(env.DB, removalWrites)
 
-  // Dataset hash is deliberately committed last. A failed sync is therefore
-  // retried by the next one-minute Cron invocation.
   await updateResourceState(env.DB, RESOURCE, datasetHash, incoming.size, SOURCE_URL, now)
 
   const summary: SyncSummary = {

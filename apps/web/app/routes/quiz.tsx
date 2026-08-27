@@ -11,7 +11,16 @@ type QuizEntry = {
   answer: "y" | "n"
 }
 
-const quizzes = quizData as QuizEntry[]
+type SearchableQuizEntry = QuizEntry & {
+  normalizedQuestion: string
+}
+
+// Quiz data is immutable for the lifetime of the static bundle. Normalize once
+// at module initialization instead of lower-casing every question on every keystroke.
+const quizzes: readonly SearchableQuizEntry[] = (quizData as QuizEntry[]).map((quiz) => ({
+  ...quiz,
+  normalizedQuestion: quiz.question.toLocaleLowerCase("ja-JP"),
+}))
 
 export function meta() {
   return [{ title: "クイズ正誤検索 | Arifure Tools" }]
@@ -23,7 +32,7 @@ export default function QuizSearch() {
 
   const results = useMemo(() => {
     if (normalizedQuery.length < 2) return []
-    return quizzes.filter((quiz) => quiz.question.toLocaleLowerCase("ja-JP").includes(normalizedQuery))
+    return quizzes.filter((quiz) => quiz.normalizedQuestion.includes(normalizedQuery))
   }, [normalizedQuery])
 
   return (

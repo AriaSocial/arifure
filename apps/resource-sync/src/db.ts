@@ -1,30 +1,16 @@
-import type { ResourceState } from "./types"
-
 const WRITE_CHUNK_SIZE = 100
 
-export async function getResourceState(db: D1Database, resource: string): Promise<ResourceState | null> {
+/**
+ * Hot-path lookup used by every one-minute Cron invocation. Read only the
+ * dataset hash; all other resource metadata is cold-path information.
+ */
+export async function getResourceContentHash(db: D1Database, resource: string): Promise<string | null> {
   const row = await db
-    .prepare(
-      `SELECT content_hash, record_count, source_url, updated_at
-       FROM resource_state
-       WHERE resource = ?1`,
-    )
+    .prepare("SELECT content_hash FROM resource_state WHERE resource = ?1")
     .bind(resource)
-    .first<{
-      content_hash: string
-      record_count: number
-      source_url: string
-      updated_at: number
-    }>()
+    .first<{ content_hash: string }>()
 
-  if (row === null) return null
-
-  return {
-    contentHash: row.content_hash,
-    recordCount: row.record_count,
-    sourceUrl: row.source_url,
-    updatedAt: row.updated_at,
-  }
+  return row?.content_hash ?? null
 }
 
 export async function updateResourceState(
@@ -49,9 +35,8 @@ export async function updateResourceState(
     .run()
 }
 
-export async function runWriteChunks(db: D1Database, statements: D1PreparedStatement[]): Promise<void> {
+export async function runWriteChunks(db: D1Database, statements: readonly D1PreparedStatement[]): Promise<void> {
   for (let index = 0; index < statements.length; index += WRITE_CHUNK_SIZE) {
-    const chunk = statements.slice(index, index + WRITE_CHUNK_SIZE)
-    if (chunk.length > 0) await db.batch(chunk)
+    await db.batch(statements.slice(index, index + WRITE_CHUNK_SIZE))
   }
 }

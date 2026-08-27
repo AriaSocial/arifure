@@ -11,10 +11,3 @@ export interface SyncSummary {
   updated: number
   deleted: number
 }
-
-export interface ResourceState {
-  contentHash: string
-  recordCount: number
-  sourceUrl: string
-  updatedAt: number
-}
