@@ -161,7 +161,7 @@ function buildLocalizePayload(
     )
     components.push({
       type: 10,
-      content: `**${change.type}: \`${escapeInlineCode(change.key)}\`**\n${value}`,
+      content: `**${change.type}:** \`${escapeInlineCode(change.key)}\`\n${value}`,
     })
   }
 
@@ -210,9 +210,6 @@ export async function notifyLocalize(
     buildLocalizePayload(summary, changes, detectedAt),
   )
 
-  // Discord's Execute Webhook endpoint rejects files[n] on a message carrying
-  // IS_COMPONENTS_V2, so the complete change list is sent immediately afterward
-  // as a separate timestamp-named text attachment.
   await postFileWebhook(webhookUrl, `${detectedAt}.txt`, fileContent)
 }
 
@@ -224,7 +221,7 @@ function buildNoticeContainer(change: NoticeChange): {
     truncateSingleLine(change.title, MAX_NOTICE_TITLE_LENGTH),
   )
   const footer = `-# ${change.type}: \`${escapeInlineCode(change.key)}\``
-  const fixedTextLength = title.length + footer.length + 3 // account for "## "
+  const fixedTextLength = title.length + footer.length + 3
   const bodyBudget = Math.max(256, MAX_NOTICE_TEXT_PER_MESSAGE - fixedTextLength)
   const body = escapeMarkdown(truncateMultiline(change.content, bodyBudget))
 
@@ -234,28 +231,11 @@ function buildNoticeContainer(change: NoticeChange): {
       type: 17,
       accent_color: ACCENT_COLOR,
       components: [
-        {
-          type: 10,
-          content: `## ${title}`,
-        },
-        {
-          type: 14,
-          divider: true,
-          spacing: 1,
-        },
-        {
-          type: 10,
-          content: body,
-        },
-        {
-          type: 14,
-          divider: false,
-          spacing: 1,
-        },
-        {
-          type: 10,
-          content: footer,
-        },
+        { type: 10, content: `## ${title}` },
+        { type: 14, divider: true, spacing: 1 },
+        { type: 10, content: body },
+        { type: 14, divider: false, spacing: 1 },
+        { type: 10, content: footer },
       ],
     },
   }
@@ -268,25 +248,16 @@ function packNoticeMessages(changes: readonly NoticeChange[]): ComponentsV2Paylo
 
   const flush = () => {
     if (containers.length === 0) return
-    payloads.push({
-      flags: IS_COMPONENTS_V2,
-      allowed_mentions: { parse: [] },
-      components: containers,
-    })
+    payloads.push({ flags: IS_COMPONENTS_V2, allowed_mentions: { parse: [] }, components: containers })
     containers = []
     textLength = 0
   }
 
   for (const change of changes) {
     const built = buildNoticeContainer(change)
-    const exceedsComponentLimit =
-      containers.length >= MAX_NOTICE_CONTAINERS_PER_MESSAGE
-    const exceedsTextLimit =
-      containers.length > 0 &&
-      textLength + built.textLength > MAX_NOTICE_TEXT_PER_MESSAGE
-
+    const exceedsComponentLimit = containers.length >= MAX_NOTICE_CONTAINERS_PER_MESSAGE
+    const exceedsTextLimit = containers.length > 0 && textLength + built.textLength > MAX_NOTICE_TEXT_PER_MESSAGE
     if (exceedsComponentLimit || exceedsTextLimit) flush()
-
     containers.push(built.container)
     textLength += built.textLength
   }
@@ -295,10 +266,7 @@ function packNoticeMessages(changes: readonly NoticeChange[]): ComponentsV2Paylo
   return payloads
 }
 
-export async function notifyNotices(
-  webhookUrl: string,
-  changes: readonly NoticeChange[],
-): Promise<void> {
+export async function notifyNotices(webhookUrl: string, changes: readonly NoticeChange[]): Promise<void> {
   for (const payload of packNoticeMessages(changes)) {
     await postComponentsWebhook(webhookUrl, payload)
   }
