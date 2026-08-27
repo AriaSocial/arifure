@@ -24,27 +24,61 @@ const HAMMERS: ReadonlyArray<{ type: HammerType; label: string }> = [
   { type: "gold", label: "金槌" },
 ]
 
+type HammerInputs = Record<HammerType, string>
+
+function emptyHammerInputs(): HammerInputs {
+  return {
+    wooden: "0",
+    iron: "0",
+    copper: "0",
+    silver: "0",
+    gold: "0",
+  }
+}
+
+function normalizeHammerInputs(inputs: HammerInputs): HammerCounts {
+  return Object.fromEntries(
+    HAMMERS.map(({ type }) => {
+      const raw = inputs[type].trim()
+      const parsed = raw === "" ? 0 : Number(raw)
+      const value = Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0
+      return [type, value]
+    }),
+  ) as HammerCounts
+}
+
 function initialResult(): CalculateGpResult {
   return calculateGp({ hammers: emptyHammerCounts(), weeklyEvent: false })
 }
 
 export default function GpCalculator() {
-  const [hammers, setHammers] = useState<HammerCounts>(() => emptyHammerCounts())
+  const [hammerInputs, setHammerInputs] = useState<HammerInputs>(emptyHammerInputs)
   const [weeklyEvent, setWeeklyEvent] = useState(false)
   const [result, setResult] = useState<CalculateGpResult>(initialResult)
   const [error, setError] = useState<string | null>(null)
 
   function updateHammer(type: HammerType, rawValue: string) {
-    const value = rawValue === "" ? 0 : Math.max(0, Math.trunc(Number(rawValue)))
-    setHammers((current) => ({ ...current, [type]: Number.isFinite(value) ? value : 0 }))
+    setHammerInputs((current) => ({ ...current, [type]: rawValue }))
     setError(null)
+  }
+
+  function focusHammer(type: HammerType) {
+    setHammerInputs((current) => current[type] === "0" ? { ...current, [type]: "" } : current)
+  }
+
+  function blurHammer(type: HammerType) {
+    setHammerInputs((current) => current[type].trim() === "" ? { ...current, [type]: "0" } : current)
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     try {
+      const hammers = normalizeHammerInputs(hammerInputs)
       setResult(calculateGp({ hammers, weeklyEvent }))
+      setHammerInputs(Object.fromEntries(
+        HAMMERS.map(({ type }) => [type, String(hammers[type])]),
+      ) as HammerInputs)
       setError(null)
     } catch (cause) {
       if (cause instanceof RangeError) {
@@ -56,8 +90,7 @@ export default function GpCalculator() {
   }
 
   function reset() {
-    const empty = emptyHammerCounts()
-    setHammers(empty)
+    setHammerInputs(emptyHammerInputs())
     setWeeklyEvent(false)
     setResult(initialResult())
     setError(null)
@@ -81,7 +114,9 @@ export default function GpCalculator() {
                     type="number"
                     min={0}
                     inputMode="numeric"
-                    value={hammers[type]}
+                    value={hammerInputs[type]}
+                    onFocus={() => focusHammer(type)}
+                    onBlur={() => blurHammer(type)}
                     onChange={(event) => updateHammer(type, event.currentTarget.value)}
                     aria-invalid={error !== null}
                   />
