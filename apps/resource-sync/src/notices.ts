@@ -31,7 +31,6 @@ interface HashedNotice {
 }
 
 export async function syncNotices(env: Env): Promise<SyncSummary> {
-  // Start the one-row D1 lookup before waiting on the upstream network request.
   const storedHashPromise = getResourceContentHash(env.DB, RESOURCE)
   const response = await fetch(SOURCE_URL)
   if (!response.ok) throw new Error(`Notice fetch failed: ${response.status}`)
@@ -47,12 +46,9 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
     return { resource: RESOURCE, changed: false, added: 0, updated: 0, deleted: 0 }
   }
 
-  // Decode/parse only after the byte-level dataset hash changed.
   const parsed = JSON.parse(decodeUtf8(sourceBytes)) as unknown
   if (!Array.isArray(parsed)) throw new Error("Notice schema changed: expected an array")
 
-  // First hash each whole notice. Translation hashes are deliberately deferred
-  // until after this comparison so unchanged notices incur no per-locale hashing.
   const prepared = await Promise.all(parsed.map((value) => hashNotice(value)))
   const incoming = new Map(prepared.map((notice) => [notice.key, notice]))
 
@@ -81,8 +77,6 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
 
   const now = Date.now()
 
-  // Only changed notices compute translation hashes and rewrite translation rows.
-  // Each notice is committed atomically with its translations.
   for (const key of [...added, ...updated]) {
     const notice = incoming.get(key)
     if (notice !== undefined) await writeNotice(env.DB, notice, now)
@@ -95,7 +89,6 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
   )
   await runWriteChunks(env.DB, removalWrites)
 
-  // As with Localize, the dataset hash is the commit marker and is written last.
   await updateResourceState(env.DB, RESOURCE, datasetHash, incoming.size, SOURCE_URL, now)
 
   const summary: SyncSummary = {
@@ -106,8 +99,6 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
     deleted: deleted.length,
   }
 
-  // Deleted notices are retained in D1 as inactive history but intentionally do
-  // not generate Discord notifications.
   if (env.DISCORD_WEBHOOK_INDEX && added.length + updated.length > 0) {
     const changes: NoticeChange[] = []
 
@@ -133,7 +124,10 @@ export async function syncNotices(env: Env): Promise<SyncSummary> {
       })
     }
 
-    await notifyNotices(env.DISCORD_WEBHOOK_INDEX, changes)
+    await notifyNotices(env.DISCORD_WEBHOOK_INDEX, changes, {
+      username: env.DISCORD_USERNAME,
+      avatarUrl: env.DISCORD_AVATAR_URL,
+    })
   }
 
   return summary

@@ -21,8 +21,6 @@ interface ExistingLocalizeValueRow {
 }
 
 export async function syncLocalize(env: Env): Promise<SyncSummary> {
-  // The D1 hot-path lookup and dynamic source resolution are independent, so
-  // overlap them instead of paying both network latencies serially.
   const [sourceUrl, storedHash] = await Promise.all([
     resolveLocalizeUrl(),
     getResourceContentHash(env.DB, RESOURCE),
@@ -31,8 +29,6 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
   const response = await fetch(sourceUrl)
   if (!response.ok) throw new Error(`Localize fetch failed: ${response.status}`)
 
-  // Hash the response bytes directly. On the overwhelmingly common unchanged
-  // path we never allocate/decode the ~3.7 MB JSON string at all.
   const sourceBytes = await response.arrayBuffer()
   if (sourceBytes.byteLength === 0) throw new Error("Localize response was empty")
 
@@ -50,9 +46,6 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
   const incomingEntries = Object.entries(parsed as Record<string, unknown>)
   const incoming = new Map<string, { value: string; contentHash: string }>()
 
-  // Per-record hashing is cold-path work and only runs after the single-row
-  // dataset hash check reports a change. Bound WebCrypto concurrency to keep
-  // memory predictable for the multi-megabyte localization source.
   for (let offset = 0; offset < incomingEntries.length; offset += HASH_CONCURRENCY) {
     const chunk = incomingEntries.slice(offset, offset + HASH_CONCURRENCY)
     const hashed = await Promise.all(
@@ -66,7 +59,6 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
     for (const [key, entry] of hashed) incoming.set(key, entry)
   }
 
-  // Compare only keys and hashes; unchanged values are never read back from D1.
   const existingResult = await env.DB
     .prepare("SELECT key, content_hash FROM localize_entries WHERE locale = ?1")
     .bind("ja")
@@ -92,36 +84,20 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
   let discordChanges: LocalizeChange[] | null = null
 
   if (env.DISCORD_WEBHOOK_LOCALIZE) {
-    // Added/updated values are already available in the upstream payload. Only
-    // deleted values require a targeted D1 read before those rows are removed.
     const deletedValues = await getExistingValues(env.DB, deleted)
     discordChanges = []
 
     for (const key of added) {
-      discordChanges.push({
-        type: "Added",
-        key,
-        value: incoming.get(key)?.value ?? "",
-      })
+      discordChanges.push({ type: "Added", key, value: incoming.get(key)?.value ?? "" })
     }
     for (const key of updated) {
-      discordChanges.push({
-        type: "Updated",
-        key,
-        value: incoming.get(key)?.value ?? "",
-      })
+      discordChanges.push({ type: "Updated", key, value: incoming.get(key)?.value ?? "" })
     }
     for (const key of deleted) {
-      discordChanges.push({
-        type: "Deleted",
-        key,
-        value: deletedValues.get(key) ?? "",
-      })
+      discordChanges.push({ type: "Deleted", key, value: deletedValues.get(key) ?? "" })
     }
   }
 
-  // Build and execute prepared statements one chunk at a time instead of
-  // materializing statements for the complete dataset in Worker memory.
   const changedKeys = [...added, ...updated]
   for (let offset = 0; offset < changedKeys.length; offset += WRITE_CHUNK_SIZE) {
     const statements: D1PreparedStatement[] = []
@@ -151,8 +127,6 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
     if (statements.length > 0) await env.DB.batch(statements)
   }
 
-  // Commit the dataset hash last. A partial failure therefore re-enters the
-  // comparison path on the next one-minute Cron run and converges idempotently.
   await updateResourceState(env.DB, RESOURCE, datasetHash, incoming.size, sourceUrl, now)
 
   const summary: SyncSummary = {
@@ -163,16 +137,16 @@ export async function syncLocalize(env: Env): Promise<SyncSummary> {
     deleted: deleted.length,
   }
 
-  if (
-    env.DISCORD_WEBHOOK_LOCALIZE &&
-    summary.changed &&
-    discordChanges !== null
-  ) {
+  if (env.DISCORD_WEBHOOK_LOCALIZE && summary.changed && discordChanges !== null) {
     await notifyLocalize(
       env.DISCORD_WEBHOOK_LOCALIZE,
       summary,
       discordChanges,
       detectedAt,
+      {
+        username: env.DISCORD_USERNAME,
+        avatarUrl: env.DISCORD_AVATAR_URL,
+      },
     )
   }
 

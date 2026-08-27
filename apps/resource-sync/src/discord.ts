@@ -13,6 +13,11 @@ export interface NoticeChange {
   content: string
 }
 
+export interface WebhookIdentity {
+  username?: string
+  avatarUrl?: string
+}
+
 interface TextDisplayComponent {
   type: 10
   content: string
@@ -31,9 +36,16 @@ interface ContainerComponent {
 }
 
 interface ComponentsV2Payload {
+  username?: string
+  avatar_url?: string
   flags: number
   allowed_mentions: { parse: [] }
   components: ContainerComponent[]
+}
+
+interface WebhookIdentityPayload {
+  username?: string
+  avatar_url?: string
 }
 
 const IS_COMPONENTS_V2 = 1 << 15
@@ -47,6 +59,7 @@ const MAX_NOTICE_CONTAINERS_PER_MESSAGE = Math.floor(
 )
 const MAX_NOTICE_TEXT_PER_MESSAGE = 3_800
 const MAX_NOTICE_TITLE_LENGTH = 240
+const MAX_WEBHOOK_USERNAME_LENGTH = 80
 
 function truncateSingleLine(value: string, maxLength: number): string {
   const normalized = value.replace(/\r?\n/g, " ")
@@ -63,6 +76,16 @@ function escapeMarkdown(value: string): string {
 
 function escapeInlineCode(value: string): string {
   return value.replace(/`/g, "｀").replace(/\r?\n/g, " ")
+}
+
+function buildIdentityPayload(identity: WebhookIdentity): WebhookIdentityPayload {
+  const username = identity.username?.trim()
+  const avatarUrl = identity.avatarUrl?.trim()
+
+  return {
+    ...(username ? { username: username.slice(0, MAX_WEBHOOK_USERNAME_LENGTH) } : {}),
+    ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+  }
 }
 
 function webhookTarget(webhookUrl: string, withComponents: boolean): URL {
@@ -95,12 +118,14 @@ async function postFileWebhook(
   webhookUrl: string,
   filename: string,
   content: string,
+  identity: WebhookIdentity,
 ): Promise<void> {
   try {
     const form = new FormData()
     form.set(
       "payload_json",
       JSON.stringify({
+        ...buildIdentityPayload(identity),
         allowed_mentions: { parse: [] },
         attachments: [{ id: 0, filename }],
       }),
@@ -138,6 +163,7 @@ function buildLocalizePayload(
   summary: SyncSummary,
   changes: readonly LocalizeChange[],
   detectedAt: number,
+  identity: WebhookIdentity,
 ): ComponentsV2Payload {
   const components: Array<TextDisplayComponent | SeparatorComponent> = [
     {
@@ -185,6 +211,7 @@ function buildLocalizePayload(
   )
 
   return {
+    ...buildIdentityPayload(identity),
     flags: IS_COMPONENTS_V2,
     allowed_mentions: { parse: [] },
     components: [
@@ -202,15 +229,16 @@ export async function notifyLocalize(
   summary: SyncSummary,
   changes: readonly LocalizeChange[],
   detectedAt: number,
+  identity: WebhookIdentity,
 ): Promise<void> {
   const fileContent = buildLocalizeFile(changes, detectedAt)
 
   await postComponentsWebhook(
     webhookUrl,
-    buildLocalizePayload(summary, changes, detectedAt),
+    buildLocalizePayload(summary, changes, detectedAt, identity),
   )
 
-  await postFileWebhook(webhookUrl, `${detectedAt}.txt`, fileContent)
+  await postFileWebhook(webhookUrl, `${detectedAt}.txt`, fileContent, identity)
 }
 
 function buildNoticeContainer(change: NoticeChange): {
@@ -241,14 +269,22 @@ function buildNoticeContainer(change: NoticeChange): {
   }
 }
 
-function packNoticeMessages(changes: readonly NoticeChange[]): ComponentsV2Payload[] {
+function packNoticeMessages(
+  changes: readonly NoticeChange[],
+  identity: WebhookIdentity,
+): ComponentsV2Payload[] {
   const payloads: ComponentsV2Payload[] = []
   let containers: ContainerComponent[] = []
   let textLength = 0
 
   const flush = () => {
     if (containers.length === 0) return
-    payloads.push({ flags: IS_COMPONENTS_V2, allowed_mentions: { parse: [] }, components: containers })
+    payloads.push({
+      ...buildIdentityPayload(identity),
+      flags: IS_COMPONENTS_V2,
+      allowed_mentions: { parse: [] },
+      components: containers,
+    })
     containers = []
     textLength = 0
   }
@@ -266,8 +302,12 @@ function packNoticeMessages(changes: readonly NoticeChange[]): ComponentsV2Paylo
   return payloads
 }
 
-export async function notifyNotices(webhookUrl: string, changes: readonly NoticeChange[]): Promise<void> {
-  for (const payload of packNoticeMessages(changes)) {
+export async function notifyNotices(
+  webhookUrl: string,
+  changes: readonly NoticeChange[],
+  identity: WebhookIdentity,
+): Promise<void> {
+  for (const payload of packNoticeMessages(changes, identity)) {
     await postComponentsWebhook(webhookUrl, payload)
   }
 }
