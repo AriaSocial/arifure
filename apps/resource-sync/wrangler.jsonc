@@ -7,7 +7,7 @@
     "crons": ["* * * * *"]
   },
   "vars": {
-    "DISCORD_USERNAME": "Arifure Resource Monitor",
+    "DISCORD_USERNAME": "Sphyr Development",
     "DISCORD_AVATAR_URL": ""
   },
   "secrets": {
