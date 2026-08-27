@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { createPageMeta } from "@/lib/meta"
 
 type QuizEntry = {
   question: string
@@ -22,7 +23,10 @@ const quizzes: readonly SearchableQuizEntry[] = (quizData as QuizEntry[]).map((q
 }))
 
 export function meta() {
-  return [{ title: "クイズ正誤検索 | Arifure Tools" }]
+  return createPageMeta(
+    "クイズ正誤検索 | Arifure Tools",
+    "『ありふれた職業で世界最強』のクイズ問題文を検索し、登録済みデータから正誤をすばやく確認できます。",
+  )
 }
 
 export default function QuizSearch() {
