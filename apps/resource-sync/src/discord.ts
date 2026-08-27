@@ -14,8 +14,8 @@ export interface NoticeChange {
 }
 
 export interface WebhookIdentity {
-  username?: string
-  avatarUrl?: string
+  username?: string | undefined
+  avatarUrl?: string | undefined
 }
 
 interface TextDisplayComponent {
