@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "arifure-resource-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-27",
+  "triggers": {
+    "crons": ["* * * * *"]
+  }
+
+  // Cloudflare側のD1作成後に有効化します。
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "arifure-resources",
+  //     "database_id": "<D1_DATABASE_ID>",
+  //     "migrations_dir": "migrations"
+  //   }
+  // ]
+}
