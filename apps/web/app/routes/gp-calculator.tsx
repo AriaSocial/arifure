@@ -7,9 +7,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { createPageMeta } from "@/lib/meta"
 
 export function meta() {
-  return [{ title: "ガチャポイント計算機 | Arifure Tools" }]
+  return createPageMeta(
+    "ガチャポイント計算機 | Arifure Tools",
+    "所持している槌から、報酬として獲得する槌の再投入まで含めた最終ガチャポイントを計算します。",
+  )
 }
 
 const HAMMERS: ReadonlyArray<{ type: HammerType; label: string }> = [
